@@ -1,0 +1,61 @@
+{
+  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\visualization\\附件1.xlsx",
+  "output_hz": 10.0,
+  "preprocessing_boundary": {
+    "done": [
+      "standardized the two source sheets into method/sample/time/x/y columns",
+      "converted each device clock to a relative time axis starting at zero",
+      "computed finite-difference interval, displacement, and speed features for diagnostics",
+      "interpolated each method onto a 10Hz grid within its own observed time span",
+      "built a 10Hz alignment input table on device-relative time"
+    ],
+    "not_done": [
+      "no row deletion, filling, outlier filtering, or denoising",
+      "no time-offset estimation",
+      "no trajectory fusion",
+      "no extrapolation outside observed time ranges"
+    ]
+  },
+  "method_summaries": [
+    {
+      "method": "method1",
+      "source_rows": 3000,
+      "resampled_10hz_rows": 7498,
+      "raw_time_start_s": 221.0,
+      "raw_time_end_s": 970.75,
+      "duration_s": 749.75,
+      "nominal_hz": 4.0,
+      "expected_dt_s": 0.25,
+      "median_dt_s": 0.25,
+      "min_dt_s": 0.25,
+      "max_dt_s": 0.25,
+      "max_abs_dt_error_s": 0.0,
+      "time_is_strictly_increasing": true,
+      "has_missing_values": false
+    },
+    {
+      "method": "method2",
+      "source_rows": 4001,
+      "resampled_10hz_rows": 8001,
+      "raw_time_start_s": 468.8317,
+      "raw_time_end_s": 1268.8317,
+      "duration_s": 800.0,
+      "nominal_hz": 5.0,
+      "expected_dt_s": 0.2,
+      "median_dt_s": 0.2,
+      "min_dt_s": 0.2,
+      "max_dt_s": 0.2,
+      "max_abs_dt_error_s": 0.0,
+      "time_is_strictly_increasing": true,
+      "has_missing_values": false
+    }
+  ],
+  "outputs": {
+    "method1_standardized": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_method1_standardized.csv",
+    "method2_standardized": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_method2_standardized.csv",
+    "long_standardized": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_long_standardized.csv",
+    "method1_10hz": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_method1_10hz_device_time.csv",
+    "method2_10hz": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_method2_10hz_device_time.csv",
+    "alignment_input_10hz": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_alignment_input_10hz_by_device_time.csv"
+  }
+}

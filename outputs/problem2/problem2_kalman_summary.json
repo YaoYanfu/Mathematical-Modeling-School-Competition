@@ -1,0 +1,104 @@
+{
+  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\visualization\\附件2.xlsx",
+  "delta_t2_minus_t1_s": 50.45331979674548,
+  "method1_time_bias_s": 0.0,
+  "method2_time_bias_s": 50.45331979674548,
+  "bias_definition": "bias_add_to_method2 = mean(method1_position - method2_position_after_time_alignment)",
+  "bias_add_to_method2_x_m": -3.477437794183383,
+  "bias_add_to_method2_y_m": 1.8321432250534793,
+  "alignment_objective_mse": 0.18232407690454433,
+  "alignment_residual_rmse_m": 0.4269942352123086,
+  "overlap_start_method1_time_s": 161.8676802032545,
+  "overlap_end_method1_time_s": 851.75,
+  "overlap_ratio": 0.9201498096655492,
+  "alignment_compare_points": 2760,
+  "kalman_state": "[x, y, vx, vy]",
+  "kalman_dt_output_s": 0.1,
+  "process_accel_std_mps2": 0.4766293964553252,
+  "measurement_cov_method1": [
+    [
+      0.6169246295682985,
+      0.0
+    ],
+    [
+      0.0,
+      0.6368481178610871
+    ]
+  ],
+  "measurement_cov_method2": [
+    [
+      0.5857063304529568,
+      0.0
+    ],
+    [
+      0.0,
+      0.6576847456583979
+    ]
+  ],
+  "data_cleaning": {
+    "方式1": {
+      "method": "detrended_residual_3sigma",
+      "trend_model": "Savitzky-Golay",
+      "sigma_multiplier": 3.0,
+      "flagged_count": 11,
+      "flagged_x_count": 10,
+      "flagged_y_count": 1,
+      "flagged_indices_first_30": [
+        214,
+        580,
+        808,
+        1232,
+        1309,
+        1528,
+        1776,
+        2198,
+        2205,
+        2312,
+        2629
+      ],
+      "residual_sigma_x_m": 0.8012038682670918,
+      "residual_sigma_y_m": 0.8007351423174227,
+      "replacement": "linear interpolation over unflagged neighboring samples"
+    },
+    "方式2": {
+      "method": "detrended_residual_3sigma",
+      "trend_model": "Savitzky-Golay",
+      "sigma_multiplier": 3.0,
+      "flagged_count": 25,
+      "flagged_x_count": 10,
+      "flagged_y_count": 15,
+      "flagged_indices_first_30": [
+        607,
+        979,
+        1034,
+        1205,
+        1298,
+        1318,
+        1333,
+        1365,
+        1522,
+        1625,
+        1887,
+        2136,
+        2175,
+        2380,
+        2469,
+        2581,
+        2644,
+        2828,
+        2837,
+        2891,
+        2957,
+        3151,
+        3280,
+        3744,
+        3753
+      ],
+      "residual_sigma_x_m": 0.7771823959422215,
+      "residual_sigma_y_m": 0.8307646644789382,
+      "replacement": "linear interpolation over unflagged neighboring samples"
+    }
+  },
+  "trajectory_rows_10hz": 6899,
+  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\problem2_trajectory_10hz_kalman.csv"
+}

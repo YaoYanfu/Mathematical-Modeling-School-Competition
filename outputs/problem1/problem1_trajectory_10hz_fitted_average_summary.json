@@ -1,0 +1,16 @@
+{
+  "method": "cubic_spline_interpolation",
+  "delta_t2_minus_t1_s": 198.43170139802265,
+  "objective_mse": 1.2010554690269563e-14,
+  "objective_rmse_m": 1.0959267626200924e-07,
+  "overlap_start_method1_time_s": 270.39999860197736,
+  "overlap_end_method1_time_s": 970.75,
+  "overlap_ratio": 0.9341113723214707,
+  "dt_s": 0.1,
+  "trajectory_rows": 7004,
+  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\problem1_trajectory_10hz_fitted_average.csv",
+  "source_files": {
+    "method1": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_method1_standardized.csv",
+    "method2": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\preprocessing\\problem1\\problem1_method2_standardized.csv"
+  }
+}

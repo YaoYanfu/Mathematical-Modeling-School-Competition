@@ -1,0 +1,95 @@
+{
+  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\visualization\\附件3.xlsx",
+  "workflow": "cleaning -> smoothing -> cross-correlation initial delta -> residual least-squares refinement -> bias significance test -> conditional debias -> Kalman fusion",
+  "delta_t2_minus_t1_s": -367.9182593419723,
+  "cross_correlation_initial_delta_s": -367.8670919324578,
+  "cross_correlation_score": 0.9994717444334021,
+  "method1_time_bias_s": 0.0,
+  "method2_time_bias_s": -367.9182593419723,
+  "bias_definition": "bias_add_to_method2 = mean(method1_position - method2_position_after_time_alignment)",
+  "bias_estimate_x_m": 0.07211791822505759,
+  "bias_estimate_y_m": 0.1752300218848382,
+  "bias_used_in_filter_x_m": 0.0,
+  "bias_used_in_filter_y_m": 0.0,
+  "bias_norm_m": 0.18949024961426633,
+  "statistical_bias_threshold_m": 0.10807863188119135,
+  "engineering_bias_threshold_m": 0.2,
+  "decision_bias_threshold_m": 0.2,
+  "system_bias_exists": false,
+  "alignment_objective_mse": 3.501376953125689,
+  "alignment_residual_rmse_m": 1.8711966634017092,
+  "overlap_start_method1_time_s": 469.05,
+  "overlap_end_method1_time_s": 769.0482593419723,
+  "overlap_ratio": 0.9259205535246059,
+  "alignment_compare_points": 1200,
+  "kalman_state": "[x, y, vx, vy]",
+  "kalman_dt_output_s": 0.1,
+  "process_accel_std_mps2": 2.0903768503352538,
+  "measurement_cov_method1": [
+    [
+      15.92495830241348,
+      0.0
+    ],
+    [
+      0.0,
+      15.868144057019466
+    ]
+  ],
+  "measurement_cov_method2": [
+    [
+      7.926712171936766,
+      0.0
+    ],
+    [
+      0.0,
+      7.624970699267336
+    ]
+  ],
+  "data_cleaning": {
+    "方式1": {
+      "method": "detrended_residual_3sigma",
+      "trend_model": "Savitzky-Golay",
+      "sigma_multiplier": 3.0,
+      "flagged_count": 9,
+      "flagged_x_count": 5,
+      "flagged_y_count": 4,
+      "flagged_indices_first_30": [
+        343,
+        818,
+        835,
+        895,
+        935,
+        940,
+        956,
+        960,
+        1213
+      ],
+      "residual_sigma_x_m": 4.084006151857972,
+      "residual_sigma_y_m": 4.061826669746715,
+      "replacement": "linear interpolation over unflagged neighboring samples"
+    },
+    "方式2": {
+      "method": "detrended_residual_3sigma",
+      "trend_model": "Savitzky-Golay",
+      "sigma_multiplier": 3.0,
+      "flagged_count": 8,
+      "flagged_x_count": 6,
+      "flagged_y_count": 2,
+      "flagged_indices_first_30": [
+        217,
+        643,
+        658,
+        706,
+        716,
+        977,
+        1303,
+        1491
+      ],
+      "residual_sigma_x_m": 2.881240246789264,
+      "residual_sigma_y_m": 2.778339806803196,
+      "replacement": "linear interpolation over unflagged neighboring samples"
+    }
+  },
+  "trajectory_rows_10hz": 3000,
+  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\problem3_trajectory_10hz_kalman.csv"
+}
