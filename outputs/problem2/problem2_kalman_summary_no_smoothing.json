@@ -1,0 +1,48 @@
+{
+  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件2.xlsx",
+  "workflow": "standardization -> cross-correlation initial delta -> joint least-squares refinement without Savitzky-Golay smoothing -> Kalman fusion",
+  "smoothing_used": false,
+  "delta_t2_minus_t1_s": 50.49724918789568,
+  "cross_correlation_initial_delta_s": 50.471,
+  "cross_correlation_score": 1.9780744002026989,
+  "method1_time_bias_s": 0.0,
+  "method2_time_bias_s": 50.49724918789568,
+  "bias_definition": "method2_corrected = method2 + bias_add_to_method2 after time alignment; no rotation angle is estimated",
+  "bias_add_to_method2_x_m": -3.480519070366929,
+  "bias_add_to_method2_y_m": 1.8323759890992888,
+  "alignment_objective_mse": 1.7629928786634992,
+  "alignment_residual_rmse_m": 1.3277774206031292,
+  "post_alignment_rmse_m": 1.5062806666512503,
+  "post_alignment_rmse_points": 2558,
+  "post_alignment_rmse_definition": "RMSE between method1 raw positions and time-aligned, translated method2 raw positions; no rotation angle is estimated",
+  "overlap_start_method1_time_s": 161.82375081210432,
+  "overlap_end_method1_time_s": 851.75,
+  "overlap_ratio": 0.9202084017177669,
+  "alignment_compare_points": 2760,
+  "kalman_state": "[x, y, vx, vy]",
+  "kalman_dt_output_s": 0.1,
+  "process_accel_std_mps2": 13.418812248572195,
+  "measurement_cov_method1": [
+    [
+      0.0025000000000000005,
+      0.0
+    ],
+    [
+      0.0,
+      0.0025000000000000005
+    ]
+  ],
+  "measurement_cov_method2": [
+    [
+      0.0025000000000000005,
+      0.0
+    ],
+    [
+      0.0,
+      0.0025000000000000005
+    ]
+  ],
+  "data_cleaning": {},
+  "trajectory_rows_10hz": 6900,
+  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题二\\problem2_trajectory_10hz_kalman_no_smoothing.csv"
+}

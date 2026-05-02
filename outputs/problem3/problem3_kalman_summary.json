@@ -1,95 +1,109 @@
 {
-  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\visualization\\附件3.xlsx",
-  "workflow": "cleaning -> smoothing -> cross-correlation initial delta -> residual least-squares refinement -> bias significance test -> conditional debias -> Kalman fusion",
-  "delta_t2_minus_t1_s": -367.9182593419723,
+  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件3.xlsx",
+  "workflow": "standardization -> light local-median MAD outlier replacement -> Savitzky-Golay smoothing for alignment/noise estimation -> cross-correlation initial delta -> residual least-squares refinement -> t-test system-bias decision -> conditional debias -> Kalman fusion",
+  "detrended_residual_3sigma_used": false,
+  "smoothing_used": true,
+  "smoothing_method": "Savitzky-Golay",
+  "smoothing_seconds": 7.5,
+  "smoothing_window_method1_points": 31,
+  "smoothing_window_method2_points": 39,
+  "light_outlier_handling_used": true,
+  "delta_t2_minus_t1_s": -367.9165201208699,
   "cross_correlation_initial_delta_s": -367.8670919324578,
-  "cross_correlation_score": 0.9994717444334021,
+  "cross_correlation_score": 0.9994661831590275,
   "method1_time_bias_s": 0.0,
-  "method2_time_bias_s": -367.9182593419723,
+  "method2_time_bias_s": -367.9165201208699,
   "bias_definition": "bias_add_to_method2 = mean(method1_position - method2_position_after_time_alignment)",
-  "bias_estimate_x_m": 0.07211791822505759,
-  "bias_estimate_y_m": 0.1752300218848382,
-  "bias_used_in_filter_x_m": 0.0,
-  "bias_used_in_filter_y_m": 0.0,
-  "bias_norm_m": 0.18949024961426633,
-  "statistical_bias_threshold_m": 0.10807863188119135,
-  "engineering_bias_threshold_m": 0.2,
-  "decision_bias_threshold_m": 0.2,
-  "system_bias_exists": false,
-  "alignment_objective_mse": 3.501376953125689,
-  "alignment_residual_rmse_m": 1.8711966634017092,
+  "bias_estimate_x_m": 0.08599187142938099,
+  "bias_estimate_y_m": 0.16987795341746154,
+  "bias_used_in_filter_x_m": 0.08599187142938099,
+  "bias_used_in_filter_y_m": 0.16987795341746154,
+  "bias_norm_m": 0.19040252364197388,
+  "system_bias_test_method": "one-sample t-test on aligned residual x/y means with Bonferroni correction",
+  "t_test_alpha": 0.05,
+  "t_test_bonferroni_alpha": 0.025,
+  "t_stat_x": 2.2397221651972137,
+  "t_stat_y": 4.427368625682325,
+  "p_value_x": 0.025291665111260162,
+  "p_value_y": 1.0408224969628725e-05,
+  "t_test_significant": true,
+  "system_bias_exists": true,
+  "alignment_objective_mse": 3.5326763717291425,
+  "alignment_residual_rmse_m": 1.8795415323235458,
   "overlap_start_method1_time_s": 469.05,
-  "overlap_end_method1_time_s": 769.0482593419723,
-  "overlap_ratio": 0.9259205535246059,
+  "overlap_end_method1_time_s": 769.0465201208699,
+  "overlap_ratio": 0.9259151855582404,
   "alignment_compare_points": 1200,
   "kalman_state": "[x, y, vx, vy]",
   "kalman_dt_output_s": 0.1,
-  "process_accel_std_mps2": 2.0903768503352538,
+  "process_accel_std_mps2": 2.098039686825546,
   "measurement_cov_method1": [
     [
-      15.92495830241348,
+      16.44900306368416,
       0.0
     ],
     [
       0.0,
-      15.868144057019466
+      16.217668980581625
     ]
   ],
   "measurement_cov_method2": [
     [
-      7.926712171936766,
+      7.972987388256694,
       0.0
     ],
     [
       0.0,
-      7.624970699267336
+      7.706167247293086
     ]
   ],
+  "rmse_definition": "2D position RMSE between method1 and method2 after time alignment and estimated spatial bias correction",
+  "aligned_methods_rmse_m": 6.802822453935728,
+  "aligned_methods_rmse_points": 1200,
   "data_cleaning": {
     "方式1": {
-      "method": "detrended_residual_3sigma",
-      "trend_model": "Savitzky-Golay",
-      "sigma_multiplier": 3.0,
-      "flagged_count": 9,
-      "flagged_x_count": 5,
-      "flagged_y_count": 4,
+      "method": "local_median_mad_light_outlier_replacement",
+      "rolling_window_points": 9,
+      "mad_multiplier": 4.0,
+      "minimum_coordinate_threshold_m": 1.0,
+      "flagged_count": 4,
+      "flagged_x_count": 2,
+      "flagged_y_count": 2,
       "flagged_indices_first_30": [
         343,
-        818,
-        835,
-        895,
         935,
-        940,
-        956,
         960,
-        1213
+        1083
       ],
-      "residual_sigma_x_m": 4.084006151857972,
-      "residual_sigma_y_m": 4.061826669746715,
+      "robust_scale_x_m": 3.6067227082428412,
+      "robust_scale_y_m": 3.525831012996285,
+      "threshold_x_m": 14.426890832971365,
+      "threshold_y_m": 14.10332405198514,
       "replacement": "linear interpolation over unflagged neighboring samples"
     },
     "方式2": {
-      "method": "detrended_residual_3sigma",
-      "trend_model": "Savitzky-Golay",
-      "sigma_multiplier": 3.0,
-      "flagged_count": 8,
+      "method": "local_median_mad_light_outlier_replacement",
+      "rolling_window_points": 9,
+      "mad_multiplier": 4.0,
+      "minimum_coordinate_threshold_m": 1.0,
+      "flagged_count": 6,
       "flagged_x_count": 6,
-      "flagged_y_count": 2,
+      "flagged_y_count": 0,
       "flagged_indices_first_30": [
-        217,
+        598,
         643,
         658,
-        706,
         716,
         977,
-        1303,
-        1491
+        1520
       ],
-      "residual_sigma_x_m": 2.881240246789264,
-      "residual_sigma_y_m": 2.778339806803196,
+      "robust_scale_x_m": 2.4536473749021366,
+      "robust_scale_y_m": 2.392928786640413,
+      "threshold_x_m": 9.814589499608546,
+      "threshold_y_m": 9.571715146561653,
       "replacement": "linear interpolation over unflagged neighboring samples"
     }
   },
   "trajectory_rows_10hz": 3000,
-  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\problem3_trajectory_10hz_kalman.csv"
+  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题三\\problem3_trajectory_10hz_kalman.csv"
 }

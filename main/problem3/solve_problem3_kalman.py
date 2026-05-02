@@ -8,19 +8,22 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
 from scipy.signal import savgol_filter
+from scipy.stats import ttest_1samp
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_PATH = PROJECT_ROOT / "visualization" / "附件3.xlsx"
-OUT_DIR = PROJECT_ROOT / "outputs"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_PATH = PROJECT_ROOT / "数据以及可视化" / "附件3.xlsx"
+OUT_DIR = PROJECT_ROOT / "outputs" / "问题三"
 
 DT_OUT = 0.1
 COMPARE_DT = 0.25
 MIN_OVERLAP_RATIO = 0.70
 SMOOTH_SECONDS = 7.5
-OUTLIER_SIGMA = 3.0
-ENGINEERING_BIAS_THRESHOLD_M = 0.2
+T_TEST_ALPHA = 0.05
 REFINE_RADIUS_S = 20.0
+OUTLIER_WINDOW = 9
+OUTLIER_MAD_THRESHOLD = 4.0
+OUTLIER_MIN_ABS_M = 1.0
 
 CLEANING_REPORT: dict[str, dict] = {}
 
@@ -38,8 +41,13 @@ class AlignmentResult:
     overlap_ratio: float
     n_compare: int
     bias_norm: float
-    statistical_bias_threshold: float
-    decision_bias_threshold: float
+    t_test_alpha: float
+    t_test_bonferroni_alpha: float
+    t_stat_x: float
+    t_stat_y: float
+    p_value_x: float
+    p_value_y: float
+    t_test_significant: bool
     system_bias_exists: bool
 
 
@@ -68,8 +76,63 @@ def standardize_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
         out = out.groupby("time_s", as_index=False)[["x_m", "y_m"]].mean()
     if not np.all(np.diff(out["time_s"].to_numpy(float)) > 0):
         raise ValueError(f"{name} time values are not strictly increasing.")
-    out = replace_detrended_residual_outliers(out, name)
+    out = replace_local_median_mad_outliers(out, name)
     return out
+
+
+def replace_local_median_mad_outliers(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    t = df["time_s"].to_numpy(float)
+    cleaned = df.copy()
+    flagged_by_axis: dict[str, np.ndarray] = {}
+    thresholds: dict[str, float] = {}
+    robust_scales: dict[str, float] = {}
+
+    for col in ["x_m", "y_m"]:
+        values = df[col].to_numpy(float)
+        local_median = (
+            pd.Series(values)
+            .rolling(window=OUTLIER_WINDOW, center=True, min_periods=max(3, OUTLIER_WINDOW // 2))
+            .median()
+            .bfill()
+            .ffill()
+            .to_numpy(float)
+        )
+        residual = values - local_median
+        mad = float(np.median(np.abs(residual - np.median(residual))))
+        robust_scale = 1.4826 * mad
+        threshold = max(OUTLIER_MAD_THRESHOLD * robust_scale, OUTLIER_MIN_ABS_M)
+        flagged_by_axis[col] = np.abs(residual) > threshold
+        thresholds[col] = threshold
+        robust_scales[col] = robust_scale
+
+    flagged = flagged_by_axis["x_m"] | flagged_by_axis["y_m"]
+    if flagged.any():
+        normal = ~flagged
+        if normal.sum() < 2:
+            raise ValueError(f"{name} has too few normal points after light outlier screening.")
+        for col in ["x_m", "y_m"]:
+            cleaned.loc[flagged, col] = np.interp(
+                t[flagged],
+                t[normal],
+                cleaned.loc[normal, col].to_numpy(float),
+            )
+
+    CLEANING_REPORT[name] = {
+        "method": "local_median_mad_light_outlier_replacement",
+        "rolling_window_points": OUTLIER_WINDOW,
+        "mad_multiplier": OUTLIER_MAD_THRESHOLD,
+        "minimum_coordinate_threshold_m": OUTLIER_MIN_ABS_M,
+        "flagged_count": int(flagged.sum()),
+        "flagged_x_count": int(flagged_by_axis["x_m"].sum()),
+        "flagged_y_count": int(flagged_by_axis["y_m"].sum()),
+        "flagged_indices_first_30": np.where(flagged)[0][:30].astype(int).tolist(),
+        "robust_scale_x_m": robust_scales["x_m"],
+        "robust_scale_y_m": robust_scales["y_m"],
+        "threshold_x_m": thresholds["x_m"],
+        "threshold_y_m": thresholds["y_m"],
+        "replacement": "linear interpolation over unflagged neighboring samples",
+    }
+    return cleaned
 
 
 def savgol_window(t: np.ndarray) -> int:
@@ -79,44 +142,6 @@ def savgol_window(t: np.ndarray) -> int:
         window += 1
     window = min(window, len(t) - 1 if (len(t) - 1) % 2 == 1 else len(t) - 2)
     return max(window, 5)
-
-
-def replace_detrended_residual_outliers(df: pd.DataFrame, name: str) -> pd.DataFrame:
-    t = df["time_s"].to_numpy(float)
-    xy = df[["x_m", "y_m"]].to_numpy(float)
-    trend = savgol_filter(xy, window_length=savgol_window(t), polyorder=3, axis=0, mode="interp")
-    residual = xy - trend
-    sigma = residual.std(axis=0, ddof=1)
-    sigma = np.where(sigma <= 1e-12, np.inf, sigma)
-
-    flag_x = np.abs(residual[:, 0]) > OUTLIER_SIGMA * sigma[0]
-    flag_y = np.abs(residual[:, 1]) > OUTLIER_SIGMA * sigma[1]
-    flagged = flag_x | flag_y
-    cleaned = df.copy()
-    if flagged.any():
-        normal = ~flagged
-        if normal.sum() < 2:
-            raise ValueError(f"{name} has too few normal points after residual 3-sigma screening.")
-        for col in ["x_m", "y_m"]:
-            cleaned.loc[flagged, col] = np.interp(
-                t[flagged],
-                t[normal],
-                cleaned.loc[normal, col].to_numpy(float),
-            )
-
-    CLEANING_REPORT[name] = {
-        "method": "detrended_residual_3sigma",
-        "trend_model": "Savitzky-Golay",
-        "sigma_multiplier": OUTLIER_SIGMA,
-        "flagged_count": int(flagged.sum()),
-        "flagged_x_count": int(flag_x.sum()),
-        "flagged_y_count": int(flag_y.sum()),
-        "flagged_indices_first_30": np.where(flagged)[0][:30].astype(int).tolist(),
-        "residual_sigma_x_m": float(sigma[0]) if np.isfinite(sigma[0]) else 0.0,
-        "residual_sigma_y_m": float(sigma[1]) if np.isfinite(sigma[1]) else 0.0,
-        "replacement": "linear interpolation over unflagged neighboring samples",
-    }
-    return cleaned
 
 
 def smooth_xy(t: np.ndarray, xy: np.ndarray) -> np.ndarray:
@@ -203,7 +228,7 @@ def alignment_objective(
     bias = residual.mean(axis=0)
     debiased = residual - bias
     mse = float(np.mean(np.sum(debiased * debiased, axis=1)))
-    return mse, bias, overlap, len(q), debiased
+    return mse, bias, overlap, len(q), residual
 
 
 def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.ndarray) -> AlignmentResult:
@@ -228,13 +253,21 @@ def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.
     lo, hi, _ = overlap_bounds(t1, t2, delta)
 
     if n_compare > 1:
-        residual_std = residual.std(axis=0, ddof=1)
-        statistical_threshold = 2.0 * float(np.linalg.norm(residual_std / np.sqrt(n_compare)))
+        test_x = ttest_1samp(residual[:, 0], popmean=0.0)
+        test_y = ttest_1samp(residual[:, 1], popmean=0.0)
+        t_stat_x = float(test_x.statistic)
+        t_stat_y = float(test_y.statistic)
+        p_value_x = float(test_x.pvalue)
+        p_value_y = float(test_y.pvalue)
     else:
-        statistical_threshold = np.inf
+        t_stat_x = float("nan")
+        t_stat_y = float("nan")
+        p_value_x = 1.0
+        p_value_y = 1.0
     bias_norm = float(np.linalg.norm(bias))
-    decision_threshold = max(ENGINEERING_BIAS_THRESHOLD_M, statistical_threshold)
-    system_bias_exists = bool(bias_norm > decision_threshold)
+    bonferroni_alpha = T_TEST_ALPHA / 2.0
+    t_test_significant = bool((p_value_x < bonferroni_alpha) or (p_value_y < bonferroni_alpha))
+    system_bias_exists = t_test_significant
 
     min_duration = min(float(t1[-1] - t1[0]), float(t2[-1] - t2[0]))
     return AlignmentResult(
@@ -249,14 +282,19 @@ def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.
         overlap_ratio=overlap / min_duration,
         n_compare=n_compare,
         bias_norm=bias_norm,
-        statistical_bias_threshold=statistical_threshold,
-        decision_bias_threshold=decision_threshold,
+        t_test_alpha=T_TEST_ALPHA,
+        t_test_bonferroni_alpha=bonferroni_alpha,
+        t_stat_x=t_stat_x,
+        t_stat_y=t_stat_y,
+        p_value_x=p_value_x,
+        p_value_y=p_value_y,
+        t_test_significant=t_test_significant,
         system_bias_exists=system_bias_exists,
     )
 
 
-def estimate_measurement_covariance(raw_xy: np.ndarray, smooth: np.ndarray) -> np.ndarray:
-    noise = raw_xy - smooth
+def estimate_measurement_covariance(raw_xy: np.ndarray, reference_xy: np.ndarray) -> np.ndarray:
+    noise = raw_xy - reference_xy
     var = np.var(noise, axis=0, ddof=1)
     var = np.maximum(var, np.array([0.05**2, 0.05**2]))
     return np.diag(var)
@@ -388,6 +426,34 @@ def run_kalman_filter(
     return pd.DataFrame(rows)
 
 
+def calculate_aligned_methods_rmse(
+    t1: np.ndarray,
+    xy1: np.ndarray,
+    t2: np.ndarray,
+    xy2: np.ndarray,
+    alignment: AlignmentResult,
+) -> dict[str, float | int]:
+    method2_query_time = t1 + alignment.delta_t2_minus_t1
+    valid = (method2_query_time >= t2[0]) & (method2_query_time <= t2[-1])
+    if int(valid.sum()) < 2:
+        return {
+            "aligned_methods_rmse_m": float("nan"),
+            "aligned_methods_rmse_points": int(valid.sum()),
+        }
+
+    xy2_aligned = interp_xy(
+        t2,
+        xy2 + alignment.bias_add_to_method2,
+        method2_query_time[valid],
+    )
+    residual = xy1[valid] - xy2_aligned
+    rmse = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
+    return {
+        "aligned_methods_rmse_m": rmse,
+        "aligned_methods_rmse_points": int(valid.sum()),
+    }
+
+
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     t1, xy1_raw, t2, xy2_raw = load_attachment3()
@@ -408,12 +474,20 @@ def main() -> None:
     accel_std = estimate_process_accel_std(q_time, fused_for_accel)
 
     trajectory = run_kalman_filter(t1, xy1_raw, t2, xy2_raw, alignment, r1, r2, accel_std)
+    aligned_methods_rmse = calculate_aligned_methods_rmse(t1, xy1_raw, t2, xy2_raw, alignment)
     trajectory_path = OUT_DIR / "problem3_trajectory_10hz_kalman.csv"
     trajectory.to_csv(trajectory_path, index=False, encoding="utf-8-sig")
 
     summary = {
         "source_workbook": str(DATA_PATH),
-        "workflow": "cleaning -> smoothing -> cross-correlation initial delta -> residual least-squares refinement -> bias significance test -> conditional debias -> Kalman fusion",
+        "workflow": "standardization -> light local-median MAD outlier replacement -> Savitzky-Golay smoothing for alignment/noise estimation -> cross-correlation initial delta -> residual least-squares refinement -> t-test system-bias decision -> conditional debias -> Kalman fusion",
+        "detrended_residual_3sigma_used": False,
+        "smoothing_used": True,
+        "smoothing_method": "Savitzky-Golay",
+        "smoothing_seconds": SMOOTH_SECONDS,
+        "smoothing_window_method1_points": savgol_window(t1),
+        "smoothing_window_method2_points": savgol_window(t2),
+        "light_outlier_handling_used": True,
         "delta_t2_minus_t1_s": alignment.delta_t2_minus_t1,
         "cross_correlation_initial_delta_s": alignment.cross_correlation_initial_delta,
         "cross_correlation_score": alignment.cross_correlation_score,
@@ -425,9 +499,14 @@ def main() -> None:
         "bias_used_in_filter_x_m": float(bias_used[0]),
         "bias_used_in_filter_y_m": float(bias_used[1]),
         "bias_norm_m": alignment.bias_norm,
-        "statistical_bias_threshold_m": alignment.statistical_bias_threshold,
-        "engineering_bias_threshold_m": ENGINEERING_BIAS_THRESHOLD_M,
-        "decision_bias_threshold_m": alignment.decision_bias_threshold,
+        "system_bias_test_method": "one-sample t-test on aligned residual x/y means with Bonferroni correction",
+        "t_test_alpha": alignment.t_test_alpha,
+        "t_test_bonferroni_alpha": alignment.t_test_bonferroni_alpha,
+        "t_stat_x": alignment.t_stat_x,
+        "t_stat_y": alignment.t_stat_y,
+        "p_value_x": alignment.p_value_x,
+        "p_value_y": alignment.p_value_y,
+        "t_test_significant": alignment.t_test_significant,
         "system_bias_exists": alignment.system_bias_exists,
         "alignment_objective_mse": alignment.objective_mse,
         "alignment_residual_rmse_m": alignment.residual_rmse,
@@ -440,6 +519,8 @@ def main() -> None:
         "process_accel_std_mps2": accel_std,
         "measurement_cov_method1": r1.tolist(),
         "measurement_cov_method2": r2.tolist(),
+        "rmse_definition": "2D position RMSE between method1 and method2 after time alignment and estimated spatial bias correction",
+        **aligned_methods_rmse,
         "data_cleaning": CLEANING_REPORT,
         "trajectory_rows_10hz": int(len(trajectory)),
         "trajectory_csv": str(trajectory_path),

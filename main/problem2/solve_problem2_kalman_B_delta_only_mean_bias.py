@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize_scalar
-from scipy.signal import savgol_filter
+from scipy.optimize import least_squares
+from scipy.signal import correlate, correlation_lags
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,8 +17,8 @@ OUT_DIR = PROJECT_ROOT / "outputs" / "问题二"
 DT_OUT = 0.1
 COMPARE_DT = 0.25
 MIN_OVERLAP_RATIO = 0.70
-SMOOTH_SECONDS = 7.5
-OUTLIER_SIGMA = 3.0
+CORRELATION_DT = 0.05
+REFINE_RADIUS_S = 20.0
 
 CLEANING_REPORT: dict[str, dict] = {}
 
@@ -26,6 +26,8 @@ CLEANING_REPORT: dict[str, dict] = {}
 @dataclass
 class AlignmentResult:
     delta_t2_minus_t1: float
+    cross_correlation_initial_delta: float
+    cross_correlation_score: float
     bias_add_to_method2: np.ndarray
     objective_mse: float
     residual_rmse: float
@@ -63,58 +65,6 @@ def standardize_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
     return out
 
 
-def savgol_window(t: np.ndarray) -> int:
-    dt = float(np.median(np.diff(t)))
-    window = max(5, int(round(SMOOTH_SECONDS / dt)))
-    if window % 2 == 0:
-        window += 1
-    window = min(window, len(t) - 1 if (len(t) - 1) % 2 == 1 else len(t) - 2)
-    return max(window, 5)
-
-
-def replace_detrended_residual_outliers(df: pd.DataFrame, name: str) -> pd.DataFrame:
-    t = df["time_s"].to_numpy(float)
-    xy = df[["x_m", "y_m"]].to_numpy(float)
-    trend = savgol_filter(xy, window_length=savgol_window(t), polyorder=3, axis=0, mode="interp")
-    residual = xy - trend
-    sigma = residual.std(axis=0, ddof=1)
-    sigma = np.where(sigma <= 1e-12, np.inf, sigma)
-
-    flag_x = np.abs(residual[:, 0]) > OUTLIER_SIGMA * sigma[0]
-    flag_y = np.abs(residual[:, 1]) > OUTLIER_SIGMA * sigma[1]
-    flagged = flag_x | flag_y
-    cleaned = df.copy()
-
-    if flagged.any():
-        normal = ~flagged
-        if normal.sum() < 2:
-            raise ValueError(f"{name} has too few normal points after residual 3-sigma screening.")
-        for col in ["x_m", "y_m"]:
-            cleaned.loc[flagged, col] = np.interp(
-                t[flagged],
-                t[normal],
-                cleaned.loc[normal, col].to_numpy(float),
-            )
-
-    CLEANING_REPORT[name] = {
-        "method": "detrended_residual_3sigma",
-        "trend_model": "Savitzky-Golay",
-        "sigma_multiplier": OUTLIER_SIGMA,
-        "flagged_count": int(flagged.sum()),
-        "flagged_x_count": int(flag_x.sum()),
-        "flagged_y_count": int(flag_y.sum()),
-        "flagged_indices_first_30": np.where(flagged)[0][:30].astype(int).tolist(),
-        "residual_sigma_x_m": float(sigma[0]) if np.isfinite(sigma[0]) else 0.0,
-        "residual_sigma_y_m": float(sigma[1]) if np.isfinite(sigma[1]) else 0.0,
-        "replacement": "linear interpolation over unflagged neighboring samples",
-    }
-    return cleaned
-
-
-def smooth_xy(t: np.ndarray, xy: np.ndarray) -> np.ndarray:
-    return savgol_filter(xy, window_length=savgol_window(t), polyorder=3, axis=0, mode="interp")
-
-
 def interp_xy(t: np.ndarray, xy: np.ndarray, q: np.ndarray) -> np.ndarray:
     return np.column_stack(
         (
@@ -124,18 +74,106 @@ def interp_xy(t: np.ndarray, xy: np.ndarray, q: np.ndarray) -> np.ndarray:
     )
 
 
+def translate_method2_xy(xy: np.ndarray, translation: np.ndarray) -> np.ndarray:
+    return xy + translation
+
+
 def overlap_bounds(t1: np.ndarray, t2: np.ndarray, delta: float) -> tuple[float, float, float]:
     lo = max(float(t1[0]), float(t2[0] - delta))
     hi = min(float(t1[-1]), float(t2[-1] - delta))
     return lo, hi, hi - lo
 
 
-def alignment_objective(
+def feasible_delta_bounds(t1: np.ndarray, t2: np.ndarray) -> tuple[float, float, float, float]:
+    min_duration = min(float(t1[-1] - t1[0]), float(t2[-1] - t2[0]))
+    min_overlap = max(30.0, MIN_OVERLAP_RATIO * min_duration)
+    delta_min = float(t2[0] - t1[-1] + min_overlap)
+    delta_max = float(t2[-1] - t1[0] - min_overlap)
+    if delta_min >= delta_max:
+        raise ValueError("No feasible time-offset search interval satisfies the overlap constraint.")
+    return delta_min, delta_max, min_overlap, min_duration
+
+
+def standardize_signal(signal: np.ndarray) -> np.ndarray:
+    signal = np.asarray(signal, dtype=float)
+    std = float(signal.std(ddof=1))
+    if std <= 1e-12:
+        return signal - float(signal.mean())
+    return (signal - float(signal.mean())) / std
+
+
+def resample_for_correlation(t: np.ndarray, xy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    grid = np.arange(float(t[0]), float(t[-1]) + 1e-9, CORRELATION_DT)
+    x_grid = np.interp(grid, t, xy[:, 0])
+    y_grid = np.interp(grid, t, xy[:, 1])
+    return grid, np.column_stack((standardize_signal(x_grid), standardize_signal(y_grid)))
+
+
+def estimate_delta_by_cross_correlation(
+    t1: np.ndarray,
+    xy1: np.ndarray,
+    t2: np.ndarray,
+    xy2: np.ndarray,
+    delta_min: float,
+    delta_max: float,
+    min_overlap: float,
+) -> tuple[float, float]:
+    grid1, xy1_grid = resample_for_correlation(t1, xy1)
+    grid2, xy2_grid = resample_for_correlation(t2, xy2)
+    corr = (
+        correlate(xy1_grid[:, 0], xy2_grid[:, 0], mode="full", method="fft")
+        + correlate(xy1_grid[:, 1], xy2_grid[:, 1], mode="full", method="fft")
+    )
+    overlap = correlate(
+        np.ones(len(grid1), dtype=float),
+        np.ones(len(grid2), dtype=float),
+        mode="full",
+        method="fft",
+    )
+    lags = correlation_lags(len(grid1), len(grid2), mode="full")
+    delta_values = grid2[0] - grid1[0] - lags * CORRELATION_DT
+    min_overlap_samples = min_overlap / CORRELATION_DT
+
+    valid = (
+        (delta_values >= delta_min)
+        & (delta_values <= delta_max)
+        & (overlap >= min_overlap_samples)
+    )
+    if not np.any(valid):
+        valid = (delta_values >= delta_min) & (delta_values <= delta_max)
+    if not np.any(valid):
+        raise ValueError("No feasible time-offset candidate is available for cross-correlation.")
+
+    scores = np.full_like(corr, -np.inf, dtype=float)
+    scores[valid] = corr[valid] / np.maximum(overlap[valid], 1.0)
+    best_index = int(np.argmax(scores))
+    return float(delta_values[best_index]), float(scores[best_index])
+
+
+def delta_only_residual_vector(
+    params: np.ndarray,
+    q: np.ndarray,
+    t1: np.ndarray,
+    xy1: np.ndarray,
+    t2: np.ndarray,
+    xy2: np.ndarray,
+) -> np.ndarray:
+    delta = float(params[0])
+    p1 = interp_xy(t1, xy1, q)
+    p2 = interp_xy(t2, xy2, q + delta)
+    residual = p1 - p2
+    bias = residual.mean(axis=0)
+    centered_residual = residual - bias
+    return np.concatenate((centered_residual[:, 0], centered_residual[:, 1]))
+
+
+def alignment_metrics(
     t1: np.ndarray,
     xy1: np.ndarray,
     t2: np.ndarray,
     xy2: np.ndarray,
     delta: float,
+    translation: np.ndarray,
     min_overlap: float,
 ) -> tuple[float, np.ndarray, float, int, np.ndarray]:
     lo, hi, overlap = overlap_bounds(t1, t2, delta)
@@ -143,39 +181,47 @@ def alignment_objective(
         return np.inf, np.zeros(2), overlap, 0, np.empty((0, 2))
 
     q = np.arange(lo, hi + 1e-9, COMPARE_DT)
-    residual = interp_xy(t1, xy1, q) - interp_xy(t2, xy2, q + delta)
-    bias = residual.mean(axis=0)
-    debiased = residual - bias
-    mse = float(np.mean(np.sum(debiased * debiased, axis=1)))
-    return mse, bias, overlap, len(q), debiased
+    p1 = interp_xy(t1, xy1, q)
+    p2 = interp_xy(t2, xy2, q + delta)
+    p2_corrected = translate_method2_xy(p2, translation)
+    residual = p1 - p2_corrected
+    mse = float(np.mean(np.sum(residual * residual, axis=1)))
+    return mse, translation, overlap, len(q), residual
 
 
 def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.ndarray) -> AlignmentResult:
-    min_duration = min(float(t1[-1] - t1[0]), float(t2[-1] - t2[0]))
-    min_overlap = max(30.0, MIN_OVERLAP_RATIO * min_duration)
-    delta_min = float(t2[0] - t1[-1] + min_overlap)
-    delta_max = float(t2[-1] - t1[0] - min_overlap)
-    if delta_min >= delta_max:
-        raise ValueError("No feasible time-offset search interval satisfies the overlap constraint.")
+    delta_min, delta_max, min_overlap, min_duration = feasible_delta_bounds(t1, t2)
+    init_delta, init_score = estimate_delta_by_cross_correlation(t1, xy1, t2, xy2, delta_min, delta_max, min_overlap)
+    local_min = max(delta_min, init_delta - REFINE_RADIUS_S)
+    local_max = min(delta_max, init_delta + REFINE_RADIUS_S)
 
-    coarse_grid = np.linspace(delta_min, delta_max, 1200)
-    coarse_scores = np.array(
-        [alignment_objective(t1, xy1, t2, xy2, delta, min_overlap)[0] for delta in coarse_grid]
-    )
-    best_delta = float(coarse_grid[int(np.argmin(coarse_scores))])
-    coarse_step = float(coarse_grid[1] - coarse_grid[0])
+    q_start = max(float(t1[0]), float(t2[0] - local_min))
+    q_end = min(float(t1[-1]), float(t2[-1] - local_max))
+    if q_end - q_start < min_overlap:
+        q_start, q_end, _ = overlap_bounds(t1, t2, init_delta)
+    q = np.arange(q_start, q_end + 1e-9, COMPARE_DT)
+    if len(q) < 4:
+        raise ValueError("Too few overlapping samples for least-squares alignment refinement.")
 
-    result = minimize_scalar(
-        lambda delta: alignment_objective(t1, xy1, t2, xy2, delta, min_overlap)[0],
-        bounds=(max(delta_min, best_delta - 3 * coarse_step), min(delta_max, best_delta + 3 * coarse_step)),
-        method="bounded",
-        options={"xatol": 1e-8},
+    result = least_squares(
+        delta_only_residual_vector,
+        x0=np.array([init_delta], dtype=float),
+        args=(q, t1, xy1, t2, xy2),
+        method="lm",
+        max_nfev=500,
+        xtol=1e-10,
+        ftol=1e-10,
+        gtol=1e-10,
     )
-    delta = float(result.x if result.success else best_delta)
-    mse, bias, overlap, n_compare, residual = alignment_objective(t1, xy1, t2, xy2, delta, min_overlap)
+    delta = float(result.x[0])
+    final_residual = interp_xy(t1, xy1, q) - interp_xy(t2, xy2, q + delta)
+    bias = final_residual.mean(axis=0)
+    mse, bias, overlap, n_compare, residual = alignment_metrics(t1, xy1, t2, xy2, delta, bias, min_overlap)
     lo, hi, _ = overlap_bounds(t1, t2, delta)
     return AlignmentResult(
         delta_t2_minus_t1=delta,
+        cross_correlation_initial_delta=init_delta,
+        cross_correlation_score=init_score,
         bias_add_to_method2=bias,
         objective_mse=mse,
         residual_rmse=float(np.sqrt(mse)),
@@ -186,8 +232,8 @@ def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.
     )
 
 
-def estimate_measurement_covariance(raw_xy: np.ndarray, smooth: np.ndarray) -> np.ndarray:
-    noise = raw_xy - smooth
+def estimate_measurement_covariance(raw_xy: np.ndarray, reference_xy: np.ndarray) -> np.ndarray:
+    noise = raw_xy - reference_xy
     var = np.var(noise, axis=0, ddof=1)
     var = np.maximum(var, np.array([0.05**2, 0.05**2]))
     return np.diag(var)
@@ -262,7 +308,7 @@ def run_kalman_filter(
     r2: np.ndarray,
     accel_std: float,
 ) -> pd.DataFrame:
-    xy2_corrected = xy2 + alignment.bias_add_to_method2
+    xy2_corrected = translate_method2_xy(xy2, alignment.bias_add_to_method2)
     lo, hi = alignment.overlap_start, alignment.overlap_end
 
     observations: list[tuple[float, np.ndarray, np.ndarray, str]] = []
@@ -318,38 +364,78 @@ def run_kalman_filter(
     return pd.DataFrame(rows)
 
 
+def calculate_post_alignment_rmse(
+    t1: np.ndarray,
+    xy1: np.ndarray,
+    t2: np.ndarray,
+    xy2: np.ndarray,
+    alignment: AlignmentResult,
+) -> dict[str, float | int | str]:
+    t_min = max(float(t1.min()), float(t2.min()))
+    t_max = min(float(t1.max()), float(t2.max()))
+    mask = (t1 >= t_min) & (t1 <= t_max)
+    t_common = t1[mask]
+    xy1_common = xy1[mask]
+
+    method2_query_time = t_common + alignment.delta_t2_minus_t1
+    valid = (method2_query_time >= t2[0]) & (method2_query_time <= t2[-1])
+    if int(valid.sum()) < 2:
+        return {
+            "post_alignment_rmse_m": float("nan"),
+            "post_alignment_rmse_points": int(valid.sum()),
+            "post_alignment_rmse_definition": "RMSE between method1 raw positions and time-aligned, translated method2 raw positions; no rotation angle is estimated",
+        }
+
+    xy2_interp = interp_xy(t2, xy2, method2_query_time[valid])
+    xy2_corrected = translate_method2_xy(xy2_interp, alignment.bias_add_to_method2)
+    residual = xy1_common[valid] - xy2_corrected
+    rmse = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
+    return {
+        "post_alignment_rmse_m": rmse,
+        "post_alignment_rmse_points": int(valid.sum()),
+        "post_alignment_rmse_definition": "RMSE between method1 raw positions and time-aligned, translated method2 raw positions; no rotation angle is estimated",
+    }
+
+
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     t1, xy1_raw, t2, xy2_raw = load_attachment2()
 
-    xy1_smooth = smooth_xy(t1, xy1_raw)
-    xy2_smooth = smooth_xy(t2, xy2_raw)
-    alignment = estimate_alignment(t1, xy1_smooth, t2, xy2_smooth)
+    alignment = estimate_alignment(t1, xy1_raw, t2, xy2_raw)
 
-    r1 = estimate_measurement_covariance(xy1_raw, xy1_smooth)
-    r2 = estimate_measurement_covariance(xy2_raw, xy2_smooth)
+    r1 = estimate_measurement_covariance(xy1_raw, xy1_raw)
+    r2 = estimate_measurement_covariance(xy2_raw, xy2_raw)
 
     q_time = np.arange(alignment.overlap_start, alignment.overlap_end + 1e-9, DT_OUT)
+    xy2_corrected_for_accel = translate_method2_xy(xy2_raw, alignment.bias_add_to_method2)
     fused_for_accel = 0.5 * (
-        interp_xy(t1, xy1_smooth, q_time)
-        + interp_xy(t2, xy2_smooth + alignment.bias_add_to_method2, q_time + alignment.delta_t2_minus_t1)
+        interp_xy(t1, xy1_raw, q_time)
+        + interp_xy(t2, xy2_corrected_for_accel, q_time + alignment.delta_t2_minus_t1)
     )
     accel_std = estimate_process_accel_std(q_time, fused_for_accel)
 
     trajectory = run_kalman_filter(t1, xy1_raw, t2, xy2_raw, alignment, r1, r2, accel_std)
-    trajectory_path = OUT_DIR / "problem2_trajectory_10hz_kalman_no_3sigma.csv"
+    post_alignment_rmse = calculate_post_alignment_rmse(t1, xy1_raw, t2, xy2_raw, alignment)
+    trajectory_path = OUT_DIR / "problem2_trajectory_10hz_kalman_B_delta_only_mean_bias.csv"
     trajectory.to_csv(trajectory_path, index=False, encoding="utf-8-sig")
 
     summary = {
         "source_workbook": str(DATA_PATH),
+        "workflow": "standardization -> cross-correlation initial delta -> fixed no-rotation delta_t-only refinement with mean residual translation bias without Savitzky-Golay smoothing -> Kalman fusion",
+        "smoothing_used": False,
+        "rotation_theta_estimated": False,
+        "refinement_method": "optimize delta_t only; estimate b as mean residual p1(t)-p2(t+delta_t)",
         "delta_t2_minus_t1_s": alignment.delta_t2_minus_t1,
+        "cross_correlation_initial_delta_s": alignment.cross_correlation_initial_delta,
+        "cross_correlation_score": alignment.cross_correlation_score,
         "method1_time_bias_s": 0.0,
         "method2_time_bias_s": alignment.delta_t2_minus_t1,
-        "bias_definition": "bias_add_to_method2 = mean(method1_position - method2_position_after_time_alignment)",
+        "bias_definition": "method2_corrected = method2 + bias_add_to_method2 after time alignment; no rotation angle is estimated",
         "bias_add_to_method2_x_m": float(alignment.bias_add_to_method2[0]),
         "bias_add_to_method2_y_m": float(alignment.bias_add_to_method2[1]),
         "alignment_objective_mse": alignment.objective_mse,
         "alignment_residual_rmse_m": alignment.residual_rmse,
+        **post_alignment_rmse,
         "overlap_start_method1_time_s": alignment.overlap_start,
         "overlap_end_method1_time_s": alignment.overlap_end,
         "overlap_ratio": alignment.overlap_ratio,
@@ -363,7 +449,7 @@ def main() -> None:
         "trajectory_rows_10hz": int(len(trajectory)),
         "trajectory_csv": str(trajectory_path),
     }
-    summary_path = OUT_DIR / "problem2_kalman_summary_no_3sigma.json"
+    summary_path = OUT_DIR / "problem2_kalman_summary_B_delta_only_mean_bias.json"
     with summary_path.open("w", encoding="utf-8") as fh:
         json.dump(summary, fh, ensure_ascii=False, indent=2)
 
