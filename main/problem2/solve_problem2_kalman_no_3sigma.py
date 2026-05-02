@@ -10,9 +10,9 @@ from scipy.optimize import minimize_scalar
 from scipy.signal import savgol_filter
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_PATH = PROJECT_ROOT / "visualization" / "附件2.xlsx"
-OUT_DIR = PROJECT_ROOT / "outputs"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_PATH = PROJECT_ROOT / "数据以及可视化" / "附件2.xlsx"
+OUT_DIR = PROJECT_ROOT / "outputs" / "问题二"
 
 DT_OUT = 0.1
 COMPARE_DT = 0.25
@@ -60,7 +60,6 @@ def standardize_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
         out = out.groupby("time_s", as_index=False)[["x_m", "y_m"]].mean()
     if not np.all(np.diff(out["time_s"].to_numpy(float)) > 0):
         raise ValueError(f"{name} time values are not strictly increasing.")
-    out = replace_detrended_residual_outliers(out, name)
     return out
 
 
@@ -338,7 +337,7 @@ def main() -> None:
     accel_std = estimate_process_accel_std(q_time, fused_for_accel)
 
     trajectory = run_kalman_filter(t1, xy1_raw, t2, xy2_raw, alignment, r1, r2, accel_std)
-    trajectory_path = OUT_DIR / "problem2_trajectory_10hz_kalman.csv"
+    trajectory_path = OUT_DIR / "problem2_trajectory_10hz_kalman_no_3sigma.csv"
     trajectory.to_csv(trajectory_path, index=False, encoding="utf-8-sig")
 
     summary = {
@@ -364,7 +363,7 @@ def main() -> None:
         "trajectory_rows_10hz": int(len(trajectory)),
         "trajectory_csv": str(trajectory_path),
     }
-    summary_path = OUT_DIR / "problem2_kalman_summary.json"
+    summary_path = OUT_DIR / "problem2_kalman_summary_no_3sigma.json"
     with summary_path.open("w", encoding="utf-8") as fh:
         json.dump(summary, fh, ensure_ascii=False, indent=2)
 

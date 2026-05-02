@@ -1,0 +1,30 @@
+{
+  "trajectory_source": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题三\\problem3_trajectory_10hz_kalman.csv",
+  "target_source": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件4.xlsx",
+  "constraints": {
+    "shoot_distance_range_m": [
+      5.0,
+      30.0
+    ],
+    "photo_distance_range_m": [
+      10.0,
+      40.0
+    ],
+    "shoot_speed_max_mps": 2.0,
+    "photo_speed_max_mps": 1.5,
+    "accel_max_mps2": 1.5,
+    "shoot_prep_s": 1.5,
+    "photo_prep_s": 0.5,
+    "photo_min_angle_diff_deg": 60.0,
+    "shoot_expected_score": 0.85,
+    "photo_score": 1.0
+  },
+  "candidate_count": 1586,
+  "selected_count": 17,
+  "selected_shoot_count": 5,
+  "selected_photo_count": 12,
+  "objective_value": 16.25,
+  "selected_tasks_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\problem4_selected_tasks.csv",
+  "filled_result_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\result_problem4.xlsx",
+  "result_template_path": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\result.xlsx"
+}
