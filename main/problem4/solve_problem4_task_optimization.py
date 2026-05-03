@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from openpyxl import load_workbook
 from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.sparse import lil_matrix
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,8 +28,10 @@ ACCEL_MAX_MPS2 = 1.5
 SHOOT_PREP_POINTS = 15
 PHOTO_PREP_POINTS = 5
 PHOTO_MIN_ANGLE_DIFF_DEG = 60.0
+
 SHOOT_WEIGHT = 0.85
 PHOTO_WEIGHT = 1.0
+OBJECTIVE_MODE = "最大化期望任务数"
 
 KALMAN_Q = np.diag([0.01, 0.01, 0.001, 0.01, 0.01, 0.001])
 KALMAN_R = np.diag([0.1, 0.1])
@@ -42,7 +45,10 @@ class CandidateTask:
     exec_idx: int
     start_time: float
     exec_time: float
-    angle_deg: float
+    distance_m: float
+    speed_mps: float
+    accel_mps2: float
+    angle_deg: float | None
     weight: float
 
 
@@ -112,8 +118,6 @@ def build_motion_table(df: pd.DataFrame) -> pd.DataFrame:
     y_obs = df["y_kalman_m"].to_numpy(float)
     state = kalman_motion_state(x_obs, y_obs, dt)
 
-    speed = np.hypot(state[1], state[4])
-    accel = np.hypot(state[2], state[5])
     return pd.DataFrame(
         {
             "time_s": t,
@@ -123,8 +127,8 @@ def build_motion_table(df: pd.DataFrame) -> pd.DataFrame:
             "vy_mps": state[4],
             "ax_mps2": state[2],
             "ay_mps2": state[5],
-            "speed_mps": speed,
-            "accel_mps2": accel,
+            "speed_mps": np.hypot(state[1], state[4]),
+            "accel_mps2": np.hypot(state[2], state[5]),
         }
     )
 
@@ -136,33 +140,8 @@ def consecutive_window_ok(mask: np.ndarray, points: int) -> np.ndarray:
     return ok
 
 
-def true_runs(mask: np.ndarray) -> list[tuple[int, int]]:
-    runs: list[tuple[int, int]] = []
-    idx = 0
-    while idx < len(mask):
-        if not mask[idx]:
-            idx += 1
-            continue
-        start = idx
-        while idx + 1 < len(mask) and mask[idx + 1]:
-            idx += 1
-        runs.append((start, idx))
-        idx += 1
-    return runs
-
-
 def angle_difference_deg(left: float, right: float) -> float:
     return abs((left - right + 180.0) % 360.0 - 180.0)
-
-
-def pick_shoot_time(run_start: int, run_end: int, distance: np.ndarray) -> int:
-    indices = np.arange(run_start, run_end + 1)
-    return int(indices[np.argmin(distance[indices])])
-
-
-def pick_photo_time(indices: np.ndarray, distance: np.ndarray) -> int:
-    target_distance = 0.5 * (PHOTO_DISTANCE_RANGE_M[0] + PHOTO_DISTANCE_RANGE_M[1])
-    return int(indices[np.argmin(np.abs(distance[indices] - target_distance))])
 
 
 def build_shoot_candidates(motion: pd.DataFrame, targets: pd.DataFrame) -> list[CandidateTask]:
@@ -186,18 +165,20 @@ def build_shoot_candidates(motion: pd.DataFrame, targets: pd.DataFrame) -> list[
         )
         window_ok = consecutive_window_ok(feasible, SHOOT_PREP_POINTS)
 
-        for start, end in true_runs(window_ok):
-            exec_idx = pick_shoot_time(start, end, distance)
-            start_idx = exec_idx - SHOOT_PREP_POINTS + 1
+        for exec_idx in np.where(window_ok)[0]:
+            start_idx = int(exec_idx - SHOOT_PREP_POINTS + 1)
             candidates.append(
                 CandidateTask(
                     target_id=target_id,
                     task_type="射击",
                     start_idx=start_idx,
-                    exec_idx=exec_idx,
+                    exec_idx=int(exec_idx),
                     start_time=float(t[start_idx]),
                     exec_time=float(t[exec_idx]),
-                    angle_deg=0.0,
+                    distance_m=float(distance[exec_idx]),
+                    speed_mps=float(speed[exec_idx]),
+                    accel_mps2=float(accel[exec_idx]),
+                    angle_deg=None,
                     weight=SHOOT_WEIGHT,
                 )
             )
@@ -218,7 +199,7 @@ def build_photo_candidates(motion: pd.DataFrame, targets: pd.DataFrame) -> list[
         tx = float(row["x_m"])
         ty = float(row["y_m"])
         distance = np.hypot(x - tx, y - ty)
-        angle = (np.degrees(np.arctan2(y - ty, x - tx)) + 360.0) % 360.0
+        angle = (np.degrees(np.arctan2(ty - y, tx - x)) + 360.0) % 360.0
         feasible = (
             motion_ok
             & (distance >= PHOTO_DISTANCE_RANGE_M[0])
@@ -226,82 +207,78 @@ def build_photo_candidates(motion: pd.DataFrame, targets: pd.DataFrame) -> list[
         )
         window_ok = consecutive_window_ok(feasible, PHOTO_PREP_POINTS)
 
-        for start, end in true_runs(window_ok):
-            indices = np.arange(start, end + 1)
-            angle_bins = np.floor(angle[indices] / PHOTO_MIN_ANGLE_DIFF_DEG).astype(int)
-            for one_bin in sorted(set(angle_bins.tolist())):
-                part = indices[angle_bins == one_bin]
-                exec_idx = pick_photo_time(part, distance)
-                start_idx = exec_idx - PHOTO_PREP_POINTS + 1
-                candidates.append(
-                    CandidateTask(
-                        target_id=target_id,
-                        task_type="拍照",
-                        start_idx=start_idx,
-                        exec_idx=exec_idx,
-                        start_time=float(t[start_idx]),
-                        exec_time=float(t[exec_idx]),
-                        angle_deg=float(angle[exec_idx]),
-                        weight=PHOTO_WEIGHT,
-                    )
+        for exec_idx in np.where(window_ok)[0]:
+            start_idx = int(exec_idx - PHOTO_PREP_POINTS + 1)
+            candidates.append(
+                CandidateTask(
+                    target_id=target_id,
+                    task_type="拍照",
+                    start_idx=start_idx,
+                    exec_idx=int(exec_idx),
+                    start_time=float(t[start_idx]),
+                    exec_time=float(t[exec_idx]),
+                    distance_m=float(distance[exec_idx]),
+                    speed_mps=float(speed[exec_idx]),
+                    accel_mps2=float(accel[exec_idx]),
+                    angle_deg=float(angle[exec_idx]),
+                    weight=PHOTO_WEIGHT,
                 )
+            )
     return candidates
 
 
-def add_pair_constraint(rows: list[np.ndarray], upper: list[float], n: int, i: int, j: int) -> None:
-    row = np.zeros(n)
-    row[i] = 1.0
-    row[j] = 1.0
-    rows.append(row)
-    upper.append(1.0)
+def add_constraint(rows: list[list[int]], cols: list[int]) -> None:
+    if len(cols) > 1:
+        rows.append(cols)
 
 
-def solve_selection(candidates: list[CandidateTask]) -> list[CandidateTask]:
+def solve_selection(candidates: list[CandidateTask], n_time: int) -> list[CandidateTask]:
     n = len(candidates)
     if n == 0:
         return []
 
-    rows: list[np.ndarray] = []
-    upper: list[float] = []
+    rows: list[list[int]] = []
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            left = candidates[i]
-            right = candidates[j]
-            overlap = left.start_idx <= right.exec_idx and right.start_idx <= left.exec_idx
-            if overlap:
-                add_pair_constraint(rows, upper, n, i, j)
+    # 时间片互斥：每个10Hz时刻最多被一个任务窗口占用。
+    active_by_time: list[list[int]] = [[] for _ in range(n_time)]
+    for col, task in enumerate(candidates):
+        for idx in range(task.start_idx, task.exec_idx + 1):
+            active_by_time[idx].append(col)
+    for cols in active_by_time:
+        add_constraint(rows, cols)
 
+    # 每个射击目标最多射击一次。
     shoot_targets = sorted({c.target_id for c in candidates if c.task_type == "射击"})
     for target_id in shoot_targets:
-        indices = [i for i, c in enumerate(candidates) if c.task_type == "射击" and c.target_id == target_id]
-        if len(indices) > 1:
-            row = np.zeros(n)
-            row[indices] = 1.0
-            rows.append(row)
-            upper.append(1.0)
+        cols = [i for i, c in enumerate(candidates) if c.task_type == "射击" and c.target_id == target_id]
+        add_constraint(rows, cols)
 
+    # 同一拍照目标两次拍照必须有足够的圆周角差。
     photo_targets = sorted({c.target_id for c in candidates if c.task_type == "拍照"})
     for target_id in photo_targets:
-        indices = [i for i, c in enumerate(candidates) if c.task_type == "拍照" and c.target_id == target_id]
-        for a in range(len(indices)):
-            for b in range(a + 1, len(indices)):
-                i = indices[a]
-                j = indices[b]
-                if angle_difference_deg(candidates[i].angle_deg, candidates[j].angle_deg) < PHOTO_MIN_ANGLE_DIFF_DEG:
-                    add_pair_constraint(rows, upper, n, i, j)
+        cols = [i for i, c in enumerate(candidates) if c.task_type == "拍照" and c.target_id == target_id]
+        for a in range(len(cols)):
+            for b in range(a + 1, len(cols)):
+                left = candidates[cols[a]]
+                right = candidates[cols[b]]
+                if left.angle_deg is None or right.angle_deg is None:
+                    continue
+                if angle_difference_deg(left.angle_deg, right.angle_deg) < PHOTO_MIN_ANGLE_DIFF_DEG:
+                    rows.append([cols[a], cols[b]])
 
-    kwargs = {
-        "c": -np.array([c.weight for c in candidates], dtype=float),
-        "integrality": np.ones(n, dtype=int),
-        "bounds": Bounds(np.zeros(n), np.ones(n)),
-        "options": {"disp": False, "mip_rel_gap": 0.0},
-    }
-    if rows:
-        matrix = np.vstack(rows)
-        kwargs["constraints"] = LinearConstraint(matrix, -np.inf, np.array(upper))
+    matrix = lil_matrix((len(rows), n), dtype=float)
+    lower = np.full(len(rows), -np.inf)
+    upper = np.ones(len(rows))
+    for row_idx, cols in enumerate(rows):
+        matrix[row_idx, cols] = 1.0
 
-    result = milp(**kwargs)
+    result = milp(
+        c=-np.array([c.weight for c in candidates], dtype=float),
+        integrality=np.ones(n, dtype=int),
+        bounds=Bounds(np.zeros(n), np.ones(n)),
+        constraints=LinearConstraint(matrix.tocsr(), lower, upper),
+        options={"disp": False, "mip_rel_gap": 0.0},
+    )
     if not result.success:
         raise RuntimeError(f"整数规划求解失败：{result.message}")
 
@@ -320,13 +297,27 @@ def selected_table(selected: list[CandidateTask]) -> pd.DataFrame:
                 "任务": task.task_type,
                 "开始准备时刻(s)": round(task.start_time, 2),
                 "任务执行时刻(s)": round(task.exec_time, 2),
-                "拍照方向角(deg)": None if task.task_type == "射击" else round(task.angle_deg, 2),
+                "执行距离(m)": round(task.distance_m, 4),
+                "执行速度(m/s)": round(task.speed_mps, 4),
+                "执行加速度(m/s2)": round(task.accel_mps2, 4),
+                "拍照方向角(deg)": None if task.angle_deg is None else round(task.angle_deg, 2),
                 "目标函数权重": task.weight,
             }
         )
     return pd.DataFrame(
         rows,
-        columns=["序号", "目标编号", "任务", "开始准备时刻(s)", "任务执行时刻(s)", "拍照方向角(deg)", "目标函数权重"],
+        columns=[
+            "序号",
+            "目标编号",
+            "任务",
+            "开始准备时刻(s)",
+            "任务执行时刻(s)",
+            "执行距离(m)",
+            "执行速度(m/s)",
+            "执行加速度(m/s2)",
+            "拍照方向角(deg)",
+            "目标函数权重",
+        ],
     )
 
 
@@ -368,7 +359,7 @@ def main() -> None:
     shoot_candidates = build_shoot_candidates(motion, shoot_targets)
     photo_candidates = build_photo_candidates(motion, photo_targets)
     candidates = shoot_candidates + photo_candidates
-    selected = solve_selection(candidates)
+    selected = solve_selection(candidates, len(motion))
     table = selected_table(selected)
 
     selected_path = OUT_DIR / "problem4_selected_tasks.csv"
@@ -379,7 +370,9 @@ def main() -> None:
     n_photo = int((table["任务"] == "拍照").sum()) if not table.empty else 0
     objective = float(table["目标函数权重"].sum()) if not table.empty else 0.0
     summary = {
-        "思路": "先用6维卡尔曼滤波估计平滑位置、速度和加速度；再提取连续可行时间段；每段保留代表任务；最后用0-1规划选择互不冲突的任务。",
+        "思路": "轻度卡尔曼滤波估计运动状态 -> 对每个满足连续准备时间的执行时刻生成原子候选窗口 -> 用10Hz时间片互斥约束建立0-1整数规划 -> 用圆周角差约束拍照角度 -> 最大化期望任务数",
+        "目标函数": f"{SHOOT_WEIGHT}×射击任务数 + {PHOTO_WEIGHT}×拍照任务数",
+        "目标函数模式": OBJECTIVE_MODE,
         "轨迹来源": str(TRAJECTORY_PATH),
         "目标来源": str(TARGET_PATH),
         "运动状态CSV": str(motion_path),
@@ -398,7 +391,7 @@ def main() -> None:
             "最大加速度_mps2": ACCEL_MAX_MPS2,
             "射击准备窗口点数": SHOOT_PREP_POINTS,
             "拍照准备窗口点数": PHOTO_PREP_POINTS,
-            "同一拍照目标最小角度差_deg": PHOTO_MIN_ANGLE_DIFF_DEG,
+            "同一拍照目标最小圆周角差_deg": PHOTO_MIN_ANGLE_DIFF_DEG,
         },
         "任务CSV": str(selected_path),
         "结果工作簿": str(workbook_path),
@@ -410,7 +403,8 @@ def main() -> None:
     if table.empty:
         print("没有选中任务。")
     else:
-        print(table[["序号", "目标编号", "任务", "开始准备时刻(s)", "任务执行时刻(s)", "拍照方向角(deg)"]].to_string(index=False))
+        cols = ["序号", "目标编号", "任务", "开始准备时刻(s)", "任务执行时刻(s)", "拍照方向角(deg)"]
+        print(table[cols].to_string(index=False))
 
 
 if __name__ == "__main__":

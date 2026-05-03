@@ -1,11 +1,13 @@
 {
-  "思路": "先用6维卡尔曼滤波估计平滑位置、速度和加速度；再提取连续可行时间段；每段保留代表任务；最后用0-1规划选择互不冲突的任务。",
+  "思路": "轻度卡尔曼滤波估计运动状态 -> 对每个满足连续准备时间的执行时刻生成原子候选窗口 -> 用10Hz时间片互斥约束建立0-1整数规划 -> 用圆周角差约束拍照角度 -> 最大化期望任务数",
+  "目标函数": "0.85×射击任务数 + 1.0×拍照任务数",
+  "目标函数模式": "最大化期望任务数",
   "轨迹来源": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题三\\problem3_trajectory_10hz_kalman.csv",
   "目标来源": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件4.xlsx",
   "运动状态CSV": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\problem4_motion_state_kalman.csv",
-  "射击候选任务数": 8,
-  "拍照候选任务数": 22,
-  "候选任务总数": 30,
+  "射击候选任务数": 23,
+  "拍照候选任务数": 88,
+  "候选任务总数": 111,
   "选中射击任务数": 2,
   "选中拍照任务数": 6,
   "选中任务总数": 8,
@@ -24,7 +26,7 @@
     "最大加速度_mps2": 1.5,
     "射击准备窗口点数": 15,
     "拍照准备窗口点数": 5,
-    "同一拍照目标最小角度差_deg": 60.0
+    "同一拍照目标最小圆周角差_deg": 60.0
   },
   "任务CSV": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\problem4_selected_tasks.csv",
   "结果工作簿": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\result.xlsx"
