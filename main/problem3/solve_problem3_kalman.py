@@ -7,8 +7,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
-from scipy.signal import savgol_filter
-from scipy.stats import ttest_1samp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,13 +16,13 @@ OUT_DIR = PROJECT_ROOT / "outputs" / "问题三"
 DT_OUT = 0.1
 COMPARE_DT = 0.25
 MIN_OVERLAP_RATIO = 0.70
-SMOOTH_SECONDS = 7.5
-T_TEST_ALPHA = 0.05
+SMOOTH_WINDOW_POINTS = 3
 REFINE_RADIUS_S = 20.0
 OUTLIER_WINDOW = 9
 OUTLIER_MAD_THRESHOLD = 4.0
 OUTLIER_MIN_ABS_M = 1.0
 
+# 记录异常点处理情况，方便后面检查。
 CLEANING_REPORT: dict[str, dict] = {}
 
 
@@ -41,13 +39,6 @@ class AlignmentResult:
     overlap_ratio: float
     n_compare: int
     bias_norm: float
-    t_test_alpha: float
-    t_test_bonferroni_alpha: float
-    t_stat_x: float
-    t_stat_y: float
-    p_value_x: float
-    p_value_y: float
-    t_test_significant: bool
     system_bias_exists: bool
 
 
@@ -65,22 +56,24 @@ def load_attachment3() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
 
 def standardize_frame(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    # 附件里只需要时间、x、y三列。
     out = df.iloc[:, :3].copy()
     out.columns = ["time_s", "x_m", "y_m"]
     for col in ["time_s", "x_m", "y_m"]:
         out[col] = pd.to_numeric(out[col], errors="coerce")
     if out[["time_s", "x_m", "y_m"]].isna().any().any():
-        raise ValueError(f"{name} contains missing or non-numeric values.")
+        raise ValueError(f"{name} 含有缺失值或非数值。")
     out = out.sort_values("time_s")
     if out["time_s"].duplicated().any():
         out = out.groupby("time_s", as_index=False)[["x_m", "y_m"]].mean()
     if not np.all(np.diff(out["time_s"].to_numpy(float)) > 0):
-        raise ValueError(f"{name} time values are not strictly increasing.")
+        raise ValueError(f"{name} 的时间值不是严格递增。")
     out = replace_local_median_mad_outliers(out, name)
     return out
 
 
 def replace_local_median_mad_outliers(df: pd.DataFrame, name: str) -> pd.DataFrame:
+    # 用局部中位数找明显跳点，找到后用插值补回去。
     t = df["time_s"].to_numpy(float)
     cleaned = df.copy()
     flagged_by_axis: dict[str, np.ndarray] = {}
@@ -109,7 +102,7 @@ def replace_local_median_mad_outliers(df: pd.DataFrame, name: str) -> pd.DataFra
     if flagged.any():
         normal = ~flagged
         if normal.sum() < 2:
-            raise ValueError(f"{name} has too few normal points after light outlier screening.")
+            raise ValueError(f"{name} 经过轻度异常点筛查后正常点过少。")
         for col in ["x_m", "y_m"]:
             cleaned.loc[flagged, col] = np.interp(
                 t[flagged],
@@ -118,34 +111,29 @@ def replace_local_median_mad_outliers(df: pd.DataFrame, name: str) -> pd.DataFra
             )
 
     CLEANING_REPORT[name] = {
-        "method": "local_median_mad_light_outlier_replacement",
-        "rolling_window_points": OUTLIER_WINDOW,
-        "mad_multiplier": OUTLIER_MAD_THRESHOLD,
-        "minimum_coordinate_threshold_m": OUTLIER_MIN_ABS_M,
-        "flagged_count": int(flagged.sum()),
-        "flagged_x_count": int(flagged_by_axis["x_m"].sum()),
-        "flagged_y_count": int(flagged_by_axis["y_m"].sum()),
-        "flagged_indices_first_30": np.where(flagged)[0][:30].astype(int).tolist(),
-        "robust_scale_x_m": robust_scales["x_m"],
-        "robust_scale_y_m": robust_scales["y_m"],
-        "threshold_x_m": thresholds["x_m"],
-        "threshold_y_m": thresholds["y_m"],
-        "replacement": "linear interpolation over unflagged neighboring samples",
+        "方法": "局部中位数MAD轻度异常点替换",
+        "滚动窗口点数": OUTLIER_WINDOW,
+        "MAD倍数": OUTLIER_MAD_THRESHOLD,
+        "单坐标最小阈值_m": OUTLIER_MIN_ABS_M,
+        "标记异常点数": int(flagged.sum()),
+        "x方向标记点数": int(flagged_by_axis["x_m"].sum()),
+        "y方向标记点数": int(flagged_by_axis["y_m"].sum()),
+        "前30个异常点索引": np.where(flagged)[0][:30].astype(int).tolist(),
+        "x方向稳健尺度_m": robust_scales["x_m"],
+        "y方向稳健尺度_m": robust_scales["y_m"],
+        "x方向阈值_m": thresholds["x_m"],
+        "y方向阈值_m": thresholds["y_m"],
+        "替换方式": "使用未标记邻近样本进行线性插值",
     }
     return cleaned
 
 
-def savgol_window(t: np.ndarray) -> int:
-    dt = float(np.median(np.diff(t)))
-    window = max(5, int(round(SMOOTH_SECONDS / dt)))
-    if window % 2 == 0:
-        window += 1
-    window = min(window, len(t) - 1 if (len(t) - 1) % 2 == 1 else len(t) - 2)
-    return max(window, 5)
-
-
 def smooth_xy(t: np.ndarray, xy: np.ndarray) -> np.ndarray:
-    return savgol_filter(xy, window_length=savgol_window(t), polyorder=3, axis=0, mode="interp")
+    # 三点均值，主要是让配准时别被小抖动带偏。
+    if len(xy) < SMOOTH_WINDOW_POINTS:
+        return xy.copy()
+    padded = np.pad(xy, ((1, 1), (0, 0)), mode="edge")
+    return (padded[:-2] + padded[1:-1] + padded[2:]) / SMOOTH_WINDOW_POINTS
 
 
 def interp_xy(t: np.ndarray, xy: np.ndarray, q: np.ndarray) -> np.ndarray:
@@ -169,7 +157,7 @@ def feasible_delta_bounds(t1: np.ndarray, t2: np.ndarray) -> tuple[float, float,
     delta_min = float(t2[0] - t1[-1] + min_overlap)
     delta_max = float(t2[-1] - t1[0] - min_overlap)
     if delta_min >= delta_max:
-        raise ValueError("No feasible time-offset search interval satisfies the overlap constraint.")
+        raise ValueError("没有满足重叠约束的可行时间偏差搜索区间。")
     return delta_min, delta_max, min_overlap
 
 
@@ -181,6 +169,7 @@ def cross_correlation_score(
     delta: float,
     min_overlap: float,
 ) -> float:
+    # 给某一个时间差打分，分数越高说明越像。
     lo, hi, overlap = overlap_bounds(t1, t2, delta)
     if overlap < min_overlap:
         return -np.inf
@@ -203,9 +192,13 @@ def estimate_delta_by_cross_correlation(
     t2: np.ndarray,
     xy2: np.ndarray,
 ) -> tuple[float, float]:
+    # 先粗略扫一遍，得到时间偏差初值。
     delta_min, delta_max, min_overlap = feasible_delta_bounds(t1, t2)
     grid = np.linspace(delta_min, delta_max, 1600)
-    scores = np.array([cross_correlation_score(t1, xy1, t2, xy2, d, min_overlap) for d in grid])
+    scores = []
+    for d in grid:
+        scores.append(cross_correlation_score(t1, xy1, t2, xy2, d, min_overlap))
+    scores = np.array(scores)
     best = float(grid[int(np.nanargmax(scores))])
     best_score = float(np.nanmax(scores))
     return best, best_score
@@ -235,10 +228,14 @@ def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.
     delta_min, delta_max, min_overlap = feasible_delta_bounds(t1, t2)
     init_delta, init_score = estimate_delta_by_cross_correlation(t1, xy1, t2, xy2)
 
+    # 再在初值附近精修，同时估计平移偏差。
     local_min = max(delta_min, init_delta - REFINE_RADIUS_S)
     local_max = min(delta_max, init_delta + REFINE_RADIUS_S)
     local_grid = np.linspace(local_min, local_max, 500)
-    local_scores = np.array([alignment_objective(t1, xy1, t2, xy2, d, min_overlap)[0] for d in local_grid])
+    local_scores = []
+    for d in local_grid:
+        local_scores.append(alignment_objective(t1, xy1, t2, xy2, d, min_overlap)[0])
+    local_scores = np.array(local_scores)
     local_best = float(local_grid[int(np.nanargmin(local_scores))])
     local_step = float(local_grid[1] - local_grid[0])
 
@@ -251,23 +248,7 @@ def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.
     delta = float(result.x if result.success else local_best)
     mse, bias, overlap, n_compare, residual = alignment_objective(t1, xy1, t2, xy2, delta, min_overlap)
     lo, hi, _ = overlap_bounds(t1, t2, delta)
-
-    if n_compare > 1:
-        test_x = ttest_1samp(residual[:, 0], popmean=0.0)
-        test_y = ttest_1samp(residual[:, 1], popmean=0.0)
-        t_stat_x = float(test_x.statistic)
-        t_stat_y = float(test_y.statistic)
-        p_value_x = float(test_x.pvalue)
-        p_value_y = float(test_y.pvalue)
-    else:
-        t_stat_x = float("nan")
-        t_stat_y = float("nan")
-        p_value_x = 1.0
-        p_value_y = 1.0
     bias_norm = float(np.linalg.norm(bias))
-    bonferroni_alpha = T_TEST_ALPHA / 2.0
-    t_test_significant = bool((p_value_x < bonferroni_alpha) or (p_value_y < bonferroni_alpha))
-    system_bias_exists = t_test_significant
 
     min_duration = min(float(t1[-1] - t1[0]), float(t2[-1] - t2[0]))
     return AlignmentResult(
@@ -282,14 +263,7 @@ def estimate_alignment(t1: np.ndarray, xy1: np.ndarray, t2: np.ndarray, xy2: np.
         overlap_ratio=overlap / min_duration,
         n_compare=n_compare,
         bias_norm=bias_norm,
-        t_test_alpha=T_TEST_ALPHA,
-        t_test_bonferroni_alpha=bonferroni_alpha,
-        t_stat_x=t_stat_x,
-        t_stat_y=t_stat_y,
-        p_value_x=p_value_x,
-        p_value_y=p_value_y,
-        t_test_significant=t_test_significant,
-        system_bias_exists=system_bias_exists,
+        system_bias_exists=True,
     )
 
 
@@ -369,7 +343,8 @@ def run_kalman_filter(
     r2: np.ndarray,
     accel_std: float,
 ) -> pd.DataFrame:
-    bias_used = alignment.bias_add_to_method2 if alignment.system_bias_exists else np.zeros(2)
+    # 方式2先去偏，然后两路观测一起进入卡尔曼滤波。
+    bias_used = alignment.bias_add_to_method2
     xy2_for_filter = xy2 + bias_used
     lo, hi = alignment.overlap_start, alignment.overlap_end
 
@@ -437,8 +412,8 @@ def calculate_aligned_methods_rmse(
     valid = (method2_query_time >= t2[0]) & (method2_query_time <= t2[-1])
     if int(valid.sum()) < 2:
         return {
-            "aligned_methods_rmse_m": float("nan"),
-            "aligned_methods_rmse_points": int(valid.sum()),
+            "对齐后两方式RMSE_m": float("nan"),
+            "对齐后两方式RMSE使用点数": int(valid.sum()),
         }
 
     xy2_aligned = interp_xy(
@@ -449,8 +424,8 @@ def calculate_aligned_methods_rmse(
     residual = xy1[valid] - xy2_aligned
     rmse = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
     return {
-        "aligned_methods_rmse_m": rmse,
-        "aligned_methods_rmse_points": int(valid.sum()),
+        "对齐后两方式RMSE_m": rmse,
+        "对齐后两方式RMSE使用点数": int(valid.sum()),
     }
 
 
@@ -458,6 +433,7 @@ def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     t1, xy1_raw, t2, xy2_raw = load_attachment3()
 
+    # 对齐时用轻度平滑后的数据，最终滤波仍保留原始观测进入。
     xy1_smooth = smooth_xy(t1, xy1_raw)
     xy2_smooth = smooth_xy(t2, xy2_raw)
     alignment = estimate_alignment(t1, xy1_smooth, t2, xy2_smooth)
@@ -465,7 +441,7 @@ def main() -> None:
     r1 = estimate_measurement_covariance(xy1_raw, xy1_smooth)
     r2 = estimate_measurement_covariance(xy2_raw, xy2_smooth)
 
-    bias_used = alignment.bias_add_to_method2 if alignment.system_bias_exists else np.zeros(2)
+    bias_used = alignment.bias_add_to_method2
     q_time = np.arange(alignment.overlap_start, alignment.overlap_end + 1e-9, DT_OUT)
     fused_for_accel = 0.5 * (
         interp_xy(t1, xy1_smooth, q_time)
@@ -479,51 +455,42 @@ def main() -> None:
     trajectory.to_csv(trajectory_path, index=False, encoding="utf-8-sig")
 
     summary = {
-        "source_workbook": str(DATA_PATH),
-        "workflow": "standardization -> light local-median MAD outlier replacement -> Savitzky-Golay smoothing for alignment/noise estimation -> cross-correlation initial delta -> residual least-squares refinement -> t-test system-bias decision -> conditional debias -> Kalman fusion",
-        "detrended_residual_3sigma_used": False,
-        "smoothing_used": True,
-        "smoothing_method": "Savitzky-Golay",
-        "smoothing_seconds": SMOOTH_SECONDS,
-        "smoothing_window_method1_points": savgol_window(t1),
-        "smoothing_window_method2_points": savgol_window(t2),
-        "light_outlier_handling_used": True,
-        "delta_t2_minus_t1_s": alignment.delta_t2_minus_t1,
-        "cross_correlation_initial_delta_s": alignment.cross_correlation_initial_delta,
-        "cross_correlation_score": alignment.cross_correlation_score,
-        "method1_time_bias_s": 0.0,
-        "method2_time_bias_s": alignment.delta_t2_minus_t1,
-        "bias_definition": "bias_add_to_method2 = mean(method1_position - method2_position_after_time_alignment)",
-        "bias_estimate_x_m": float(alignment.bias_add_to_method2[0]),
-        "bias_estimate_y_m": float(alignment.bias_add_to_method2[1]),
-        "bias_used_in_filter_x_m": float(bias_used[0]),
-        "bias_used_in_filter_y_m": float(bias_used[1]),
-        "bias_norm_m": alignment.bias_norm,
-        "system_bias_test_method": "one-sample t-test on aligned residual x/y means with Bonferroni correction",
-        "t_test_alpha": alignment.t_test_alpha,
-        "t_test_bonferroni_alpha": alignment.t_test_bonferroni_alpha,
-        "t_stat_x": alignment.t_stat_x,
-        "t_stat_y": alignment.t_stat_y,
-        "p_value_x": alignment.p_value_x,
-        "p_value_y": alignment.p_value_y,
-        "t_test_significant": alignment.t_test_significant,
-        "system_bias_exists": alignment.system_bias_exists,
-        "alignment_objective_mse": alignment.objective_mse,
-        "alignment_residual_rmse_m": alignment.residual_rmse,
-        "overlap_start_method1_time_s": alignment.overlap_start,
-        "overlap_end_method1_time_s": alignment.overlap_end,
-        "overlap_ratio": alignment.overlap_ratio,
-        "alignment_compare_points": alignment.n_compare,
-        "kalman_state": "[x, y, vx, vy]",
-        "kalman_dt_output_s": DT_OUT,
-        "process_accel_std_mps2": accel_std,
-        "measurement_cov_method1": r1.tolist(),
-        "measurement_cov_method2": r2.tolist(),
-        "rmse_definition": "2D position RMSE between method1 and method2 after time alignment and estimated spatial bias correction",
+        "源工作簿": str(DATA_PATH),
+        "流程": "标准化 -> 局部中位数MAD轻度异常点替换 -> 使用三点滑动均值平滑辅助对齐和噪声估计 -> 互相关法估计时间偏差初值 -> 残差最小化精修 -> 估计空间偏差b -> 方式2去偏 -> 卡尔曼融合",
+        "是否使用去趋势残差3σ": False,
+        "是否使用平滑": True,
+        "平滑方法": "三点滑动均值",
+        "平滑窗口点数": SMOOTH_WINDOW_POINTS,
+        "是否使用轻度异常点处理": True,
+        "方式2相对方式1时间偏差_s": alignment.delta_t2_minus_t1,
+        "互相关初始时间偏差_s": alignment.cross_correlation_initial_delta,
+        "互相关得分": alignment.cross_correlation_score,
+        "方式1时间偏差_s": 0.0,
+        "方式2时间偏差_s": alignment.delta_t2_minus_t1,
+        "偏差定义": "需加到方式2的偏差 = mean(方式1位置 - 时间对齐后的方式2位置)",
+        "估计偏差_x_m": float(alignment.bias_add_to_method2[0]),
+        "估计偏差_y_m": float(alignment.bias_add_to_method2[1]),
+        "滤波使用偏差_x_m": float(bias_used[0]),
+        "滤波使用偏差_y_m": float(bias_used[1]),
+        "偏差模长_m": alignment.bias_norm,
+        "系统偏差判定依据": "直接依据估计出的空间偏差b，不进行统计假设检验",
+        "是否存在系统偏差": alignment.system_bias_exists,
+        "对齐目标函数MSE": alignment.objective_mse,
+        "对齐残差RMSE_m": alignment.residual_rmse,
+        "重叠区间起点_方式1时间_s": alignment.overlap_start,
+        "重叠区间终点_方式1时间_s": alignment.overlap_end,
+        "重叠比例": alignment.overlap_ratio,
+        "对齐比较点数": alignment.n_compare,
+        "卡尔曼状态量": "[x, y, vx, vy]",
+        "卡尔曼输出步长_s": DT_OUT,
+        "过程加速度标准差_mps2": accel_std,
+        "方式1测量协方差": r1.tolist(),
+        "方式2测量协方差": r2.tolist(),
+        "RMSE定义": "时间对齐并进行空间偏差校正后，方式1与方式2之间的二维位置RMSE",
         **aligned_methods_rmse,
-        "data_cleaning": CLEANING_REPORT,
-        "trajectory_rows_10hz": int(len(trajectory)),
-        "trajectory_csv": str(trajectory_path),
+        "数据清洗": CLEANING_REPORT,
+        "10Hz轨迹行数": int(len(trajectory)),
+        "轨迹CSV": str(trajectory_path),
     }
     summary_path = OUT_DIR / "problem3_kalman_summary.json"
     with summary_path.open("w", encoding="utf-8") as fh:

@@ -14,7 +14,21 @@ MIN_OVERLAP_RATIO = 0.70
 # ------------------------------
 # 1. 读取数据
 # ------------------------------
-preprocess_dir = Path(__file__).resolve().parents[1] / 'outputs' / 'preprocessing' / 'problem1'
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+preprocess_candidates = [
+    PROJECT_ROOT / 'outputs' / '问题一' / 'preprocessing' / 'problem1',
+    PROJECT_ROOT / '数据以及可视化' / 'preprocessing' / 'problem1',
+    PROJECT_ROOT / 'outputs' / 'preprocessing' / 'problem1',
+]
+preprocess_dir = next(
+    (
+        path
+        for path in preprocess_candidates
+        if (path / 'problem1_method1_standardized.csv').exists()
+        and (path / 'problem1_method2_standardized.csv').exists()
+    ),
+    preprocess_candidates[0],
+)
 df1 = pd.read_csv(preprocess_dir / 'problem1_method1_standardized.csv')
 df2 = pd.read_csv(preprocess_dir / 'problem1_method2_standardized.csv')
 
@@ -189,8 +203,8 @@ axes[0,0].scatter(t1, x1, s=3, alpha=0.45, label='观测数据')
 axes[0,0].plot(tf1x, fx1, 'r-', lw=2, label='三次样条主方法')
 axes[0,0].plot(tf1x_aux, fx1_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[0,0].set_xlabel('时间 (s)')
-axes[0,0].set_ylabel('X (m)')
-axes[0,0].set_title('方式1 (4Hz) X‑t')
+axes[0,0].set_ylabel('X坐标 (m)')
+axes[0,0].set_title('方式1 (4Hz) X-时间投影')
 axes[0,0].legend()
 axes[0,0].grid(alpha=0.3)
 
@@ -199,8 +213,8 @@ axes[0,1].scatter(t1, y1, s=3, alpha=0.45, label='观测数据')
 axes[0,1].plot(tf1y, fy1, 'r-', lw=2, label='三次样条主方法')
 axes[0,1].plot(tf1y_aux, fy1_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[0,1].set_xlabel('时间 (s)')
-axes[0,1].set_ylabel('Y (m)')
-axes[0,1].set_title('方式1 (4Hz) Y‑t')
+axes[0,1].set_ylabel('Y坐标 (m)')
+axes[0,1].set_title('方式1 (4Hz) Y-时间投影')
 axes[0,1].legend()
 axes[0,1].grid(alpha=0.3)
 
@@ -209,8 +223,8 @@ axes[1,0].scatter(t2, x2, s=3, alpha=0.45, label='观测数据')
 axes[1,0].plot(tf2x, fx2, 'r-', lw=2, label='三次样条主方法')
 axes[1,0].plot(tf2x_aux, fx2_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[1,0].set_xlabel('时间 (s)')
-axes[1,0].set_ylabel('X (m)')
-axes[1,0].set_title('方式2 (5Hz) X‑t')
+axes[1,0].set_ylabel('X坐标 (m)')
+axes[1,0].set_title('方式2 (5Hz) X-时间投影')
 axes[1,0].legend()
 axes[1,0].grid(alpha=0.3)
 
@@ -219,8 +233,8 @@ axes[1,1].scatter(t2, y2, s=3, alpha=0.45, label='观测数据')
 axes[1,1].plot(tf2y, fy2, 'r-', lw=2, label='三次样条主方法')
 axes[1,1].plot(tf2y_aux, fy2_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[1,1].set_xlabel('时间 (s)')
-axes[1,1].set_ylabel('Y (m)')
-axes[1,1].set_title('方式2 (5Hz) Y‑t')
+axes[1,1].set_ylabel('Y坐标 (m)')
+axes[1,1].set_title('方式2 (5Hz) Y-时间投影')
 axes[1,1].legend()
 axes[1,1].grid(alpha=0.3)
 
@@ -231,8 +245,8 @@ fig2, axes2 = plt.subplots(1, 3, figsize=(18, 5))
 
 axes2[0].plot(x1, y1, 'b-', lw=1, alpha=0.8, label='方式1')
 axes2[0].plot(x2, y2, 'r-', lw=1, alpha=0.8, label='方式2')
-axes2[0].set_xlabel('X (m)')
-axes2[0].set_ylabel('Y (m)')
+axes2[0].set_xlabel('X坐标 (m)')
+axes2[0].set_ylabel('Y坐标 (m)')
 axes2[0].set_title('对齐前二维轨迹')
 axes2[0].axis('equal')
 axes2[0].legend()
@@ -240,8 +254,8 @@ axes2[0].grid(alpha=0.3)
 
 axes2[1].plot(x1_align, y1_align, 'b-', lw=1.5, label='方式1样条轨迹')
 axes2[1].plot(x2_align, y2_align, 'r--', lw=1.5, label='方式2配准后样条轨迹')
-axes2[1].set_xlabel('X (m)')
-axes2[1].set_ylabel('Y (m)')
+axes2[1].set_xlabel('X坐标 (m)')
+axes2[1].set_ylabel('Y坐标 (m)')
 axes2[1].set_title(f'样条主方法对齐后 Δt={delta_t:.4f}s')
 axes2[1].axis('equal')
 axes2[1].legend()

@@ -1,35 +1,35 @@
 {
-  "source_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件2.xlsx",
-  "workflow": "standardization -> rotation-invariant cross-correlation delta candidates plus coordinate cross-correlation anchor -> Procrustes initial theta and translation bias -> bounded LM joint refinement of delta_t, theta, and translation bias without Savitzky-Golay smoothing -> Kalman fusion",
-  "smoothing_used": false,
-  "rotation_theta_estimated": true,
-  "delta_refine_radius_s": 2.0,
-  "delta_t2_minus_t1_s": 50.497393542908405,
-  "cross_correlation_initial_delta_s": 50.471,
-  "delta_candidate_count": 41,
-  "procrustes_initial_theta_rad": 1.3988478504148359e-05,
-  "procrustes_initial_theta_deg": 0.000801480780097176,
-  "cross_correlation_score": 1.9780744002026989,
-  "theta_rad": -0.00048584618275082647,
-  "theta_deg": -0.027836935764164055,
-  "method1_time_bias_s": 0.0,
-  "method2_time_bias_s": 50.497393542908405,
-  "bias_definition": "method2_corrected = R(theta) @ method2 + bias_add_to_method2 after time alignment",
-  "bias_add_to_method2_x_m": -3.476449177029089,
-  "bias_add_to_method2_y_m": 1.8379354762974216,
-  "alignment_objective_mse": 1.7636158449911832,
-  "alignment_residual_rmse_m": 1.3280119897768932,
-  "post_alignment_rmse_m": 1.5063148192054403,
-  "post_alignment_rmse_points": 2558,
-  "post_alignment_rmse_definition": "RMSE between method1 raw positions and time-aligned, rotated-translated method2 raw positions",
-  "overlap_start_method1_time_s": 161.82360645709159,
-  "overlap_end_method1_time_s": 851.75,
-  "overlap_ratio": 0.9202085942552963,
-  "alignment_compare_points": 2760,
-  "kalman_state": "[x, y, vx, vy]",
-  "kalman_dt_output_s": 0.1,
-  "process_accel_std_mps2": 13.426594782404429,
-  "measurement_cov_method1": [
+  "源工作簿": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件2.xlsx",
+  "流程": "标准化 -> 旋转不变特征互相关生成时间偏差候选并加入坐标互相关锚点 -> Procrustes估计旋转角和平移偏差初值 -> 有界LM联合精修时间偏差、旋转角和平移偏差 -> 不使用Savitzky-Golay平滑 -> 卡尔曼融合",
+  "是否使用平滑": false,
+  "是否估计旋转角": true,
+  "时间偏差精修半径_s": 2.0,
+  "方式2相对方式1时间偏差_s": 50.497393542908405,
+  "互相关初始时间偏差_s": 50.471,
+  "时间偏差候选数量": 41,
+  "Procrustes初始旋转角_rad": 1.3988478504148359e-05,
+  "Procrustes初始旋转角_deg": 0.000801480780097176,
+  "互相关得分": 1.9780744002026989,
+  "旋转角_rad": -0.00048584618275082647,
+  "旋转角_deg": -0.027836935764164055,
+  "方式1时间偏差_s": 0.0,
+  "方式2时间偏差_s": 50.497393542908405,
+  "偏差定义": "时间对齐后，方式2校正位置 = R(theta) @ 方式2位置 + 需加到方式2的平移偏差",
+  "需加到方式2的偏差_x_m": -3.476449177029089,
+  "需加到方式2的偏差_y_m": 1.8379354762974216,
+  "对齐目标函数MSE": 1.7636158449911832,
+  "对齐残差RMSE_m": 1.3280119897768932,
+  "对齐后RMSE_m": 1.5063148192054403,
+  "对齐后RMSE使用点数": 2558,
+  "对齐后RMSE定义": "方式1原始位置与时间对齐、旋转和平移校正后的方式2位置之间的RMSE",
+  "重叠区间起点_方式1时间_s": 161.82360645709159,
+  "重叠区间终点_方式1时间_s": 851.75,
+  "重叠比例": 0.9202085942552963,
+  "对齐比较点数": 2760,
+  "卡尔曼状态量": "[x, y, vx, vy]",
+  "卡尔曼输出步长_s": 0.1,
+  "过程加速度标准差_mps2": 13.426594782404429,
+  "方式1测量协方差": [
     [
       0.0025000000000000005,
       0.0
@@ -39,7 +39,7 @@
       0.0025000000000000005
     ]
   ],
-  "measurement_cov_method2": [
+  "方式2测量协方差": [
     [
       0.0025000000000000005,
       0.0
@@ -49,7 +49,7 @@
       0.0025000000000000005
     ]
   ],
-  "data_cleaning": {},
-  "trajectory_rows_10hz": 6900,
-  "trajectory_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题二\\problem2_trajectory_10hz_kalman_A_theta_lm.csv"
+  "数据清洗": {},
+  "10Hz轨迹行数": 6900,
+  "轨迹CSV": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题二\\problem2_trajectory_10hz_kalman_A_theta_lm.csv"
 }

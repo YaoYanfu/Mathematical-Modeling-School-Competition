@@ -11,10 +11,20 @@ plt.rcParams['font.family'] = ['Times New Roman', 'SimHei']
 ALIGN_DT = 0.1
 MIN_OVERLAP_RATIO = 0.70
 
-# ------------------------------
-# 1. 读取数据
-# ------------------------------
-preprocess_dir = Path(__file__).resolve().parents[1] / 'outputs' / 'preprocessing' / 'problem1'
+# 读入预处理后的数据
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+preprocess_candidates = [
+    PROJECT_ROOT / 'outputs' / '问题一' / 'preprocessing' / 'problem1',
+    PROJECT_ROOT / '数据以及可视化' / 'preprocessing' / 'problem1',
+    PROJECT_ROOT / 'outputs' / 'preprocessing' / 'problem1',
+]
+preprocess_dir = preprocess_candidates[0]
+for path in preprocess_candidates:
+    has_file1 = (path / 'problem1_method1_standardized.csv').exists()
+    has_file2 = (path / 'problem1_method2_standardized.csv').exists()
+    if has_file1 and has_file2:
+        preprocess_dir = path
+        break
 df1 = pd.read_csv(preprocess_dir / 'problem1_method1_standardized.csv')
 df2 = pd.read_csv(preprocess_dir / 'problem1_method2_standardized.csv')
 
@@ -26,9 +36,7 @@ t2 = df2['time_s'].values
 x2 = df2['x_m'].values
 y2 = df2['y_m'].values
 
-# ------------------------------
-# 2. 主方法：三次样条插值
-# ------------------------------
+# 主方法：三次样条插值
 def build_spline(t, signal):
     return CubicSpline(t, signal, bc_type='natural')
 
@@ -37,9 +45,7 @@ def spline_fit_curve(t, spline):
     fit_curve = spline(t_fit)
     return t_fit, fit_curve
 
-# ------------------------------
-# 3. 辅助方法：线性调幅余弦拟合
-# ------------------------------
+# 辅助方法：线性调幅余弦拟合
 def amp_model(t, c, a, b, omega, phi):
     """线性调幅余弦：c + (a + b*t) * cos(omega*t + phi)"""
     return c + (a + b * t) * np.cos(omega * t + phi)
@@ -79,9 +85,7 @@ def amp_fit_curve(t, params):
     fit_curve = amp_model(t_fit, *params)
     return t_fit, fit_curve
 
-# ------------------------------
-# 4. 时间配准模型
-# ------------------------------
+# 时间配准
 def overlap_bounds(delta_t):
     overlap_start = max(t1.min(), t2.min() - delta_t)
     overlap_end = min(t1.max(), t2.max() - delta_t)
@@ -111,18 +115,21 @@ def align_time(f1x, f1y, f2x, f2y):
     delta_max = t2.max() - t1.min() - min_overlap
 
     search_grid = np.linspace(delta_min, delta_max, 1000)
-    scores = np.array([
-        alignment_objective(delta, f1x, f1y, f2x, f2y)
-        for delta in search_grid
-    ])
+    scores = []
+    for delta in search_grid:
+        scores.append(alignment_objective(delta, f1x, f1y, f2x, f2y))
+    scores = np.array(scores)
     finite = np.isfinite(scores)
     if not finite.any():
         raise ValueError("没有满足最小重叠比例的时间偏移搜索区间")
 
     best_delta = search_grid[np.argmin(scores)]
     grid_step = search_grid[1] - search_grid[0]
+    def local_objective(delta):
+        return alignment_objective(delta, f1x, f1y, f2x, f2y)
+
     result = minimize_scalar(
-        lambda delta: alignment_objective(delta, f1x, f1y, f2x, f2y),
+        local_objective,
         bounds=(max(delta_min, best_delta - 2 * grid_step), min(delta_max, best_delta + 2 * grid_step)),
         method='bounded',
         options={'xatol': 1e-8},
@@ -145,9 +152,7 @@ def alignment_series(delta_t, f1x, f1y, f2x, f2y):
     error = np.sqrt((x1_fit - x2_fit) ** 2 + (y1_fit - y2_fit) ** 2)
     return ti, x1_fit, y1_fit, x2_fit, y2_fit, error
 
-# ------------------------------
-# 5. 构造主方法与辅助方法
-# ------------------------------
+# 先拟合，再做时间对齐
 spline1x = build_spline(t1, x1)
 spline1y = build_spline(t1, y1)
 spline2x = build_spline(t2, x2)
@@ -179,48 +184,46 @@ aux_delta_t, aux_mse, aux_start, aux_end, aux_ratio, aux_n = align_time(
     lambda t: amp_model(t, *params2y),
 )
 
-# ------------------------------
-# 6. 绘图
-# ------------------------------
+# 绘图
 fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
-# 方式1 x-t
+# 方式1：x-t
 axes[0,0].scatter(t1, x1, s=3, alpha=0.45, label='观测数据')
 axes[0,0].plot(tf1x, fx1, 'r-', lw=2, label='三次样条主方法')
 axes[0,0].plot(tf1x_aux, fx1_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[0,0].set_xlabel('时间 (s)')
-axes[0,0].set_ylabel('X (m)')
-axes[0,0].set_title('方式1 (4Hz) X‑t')
+axes[0,0].set_ylabel('X坐标 (m)')
+axes[0,0].set_title('方式1 (4Hz) X-时间投影')
 axes[0,0].legend()
 axes[0,0].grid(alpha=0.3)
 
-# 方式1 y-t
+# 方式1：y-t
 axes[0,1].scatter(t1, y1, s=3, alpha=0.45, label='观测数据')
 axes[0,1].plot(tf1y, fy1, 'r-', lw=2, label='三次样条主方法')
 axes[0,1].plot(tf1y_aux, fy1_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[0,1].set_xlabel('时间 (s)')
-axes[0,1].set_ylabel('Y (m)')
-axes[0,1].set_title('方式1 (4Hz) Y‑t')
+axes[0,1].set_ylabel('Y坐标 (m)')
+axes[0,1].set_title('方式1 (4Hz) Y-时间投影')
 axes[0,1].legend()
 axes[0,1].grid(alpha=0.3)
 
-# 方式2 x-t
+# 方式2：x-t
 axes[1,0].scatter(t2, x2, s=3, alpha=0.45, label='观测数据')
 axes[1,0].plot(tf2x, fx2, 'r-', lw=2, label='三次样条主方法')
 axes[1,0].plot(tf2x_aux, fx2_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[1,0].set_xlabel('时间 (s)')
-axes[1,0].set_ylabel('X (m)')
-axes[1,0].set_title('方式2 (5Hz) X‑t')
+axes[1,0].set_ylabel('X坐标 (m)')
+axes[1,0].set_title('方式2 (5Hz) X-时间投影')
 axes[1,0].legend()
 axes[1,0].grid(alpha=0.3)
 
-# 方式2 y-t
+# 方式2：y-t
 axes[1,1].scatter(t2, y2, s=3, alpha=0.45, label='观测数据')
 axes[1,1].plot(tf2y, fy2, 'r-', lw=2, label='三次样条主方法')
 axes[1,1].plot(tf2y_aux, fy2_aux, 'g--', lw=1.5, label='线性调幅辅助')
 axes[1,1].set_xlabel('时间 (s)')
-axes[1,1].set_ylabel('Y (m)')
-axes[1,1].set_title('方式2 (5Hz) Y‑t')
+axes[1,1].set_ylabel('Y坐标 (m)')
+axes[1,1].set_title('方式2 (5Hz) Y-时间投影')
 axes[1,1].legend()
 axes[1,1].grid(alpha=0.3)
 
@@ -231,8 +234,8 @@ fig2, axes2 = plt.subplots(1, 3, figsize=(18, 5))
 
 axes2[0].plot(x1, y1, 'b-', lw=1, alpha=0.8, label='方式1')
 axes2[0].plot(x2, y2, 'r-', lw=1, alpha=0.8, label='方式2')
-axes2[0].set_xlabel('X (m)')
-axes2[0].set_ylabel('Y (m)')
+axes2[0].set_xlabel('X坐标 (m)')
+axes2[0].set_ylabel('Y坐标 (m)')
 axes2[0].set_title('对齐前二维轨迹')
 axes2[0].axis('equal')
 axes2[0].legend()
@@ -240,8 +243,8 @@ axes2[0].grid(alpha=0.3)
 
 axes2[1].plot(x1_align, y1_align, 'b-', lw=1.5, label='方式1样条轨迹')
 axes2[1].plot(x2_align, y2_align, 'r--', lw=1.5, label='方式2配准后样条轨迹')
-axes2[1].set_xlabel('X (m)')
-axes2[1].set_ylabel('Y (m)')
+axes2[1].set_xlabel('X坐标 (m)')
+axes2[1].set_ylabel('Y坐标 (m)')
 axes2[1].set_title(f'样条主方法对齐后 Δt={delta_t:.4f}s')
 axes2[1].axis('equal')
 axes2[1].legend()

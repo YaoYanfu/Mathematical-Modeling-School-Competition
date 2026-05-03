@@ -8,10 +8,10 @@ import pandas as pd
 
 plt.rcParams["font.family"] = ["Times New Roman", "SimHei"]
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_PATH = ROOT / "visualization" / "附件2.xlsx"
-SOLVER_PATH = ROOT / "main" / "solve_problem2_kalman.py"
-OUTPUT_PATH = ROOT / "outputs" / "problem2_cleaned_attachment2_combined.png"
+ROOT = Path(__file__).resolve().parents[2]
+DATA_PATH = ROOT / "数据以及可视化" / "附件2.xlsx"
+SOLVER_PATH = ROOT / "main" / "第二问" / "solve_problem2_kalman.py"
+OUTPUT_PATH = ROOT / "outputs" / "问题二" / "problem2_cleaned_attachment2_combined.png"
 
 
 spec = importlib.util.spec_from_file_location("solve_problem2_kalman", SOLVER_PATH)
@@ -37,16 +37,16 @@ scatter1 = ax1.scatter(
     s=3,
     alpha=0.75,
 )
-ax1.set_xlabel("X (m)")
-ax1.set_ylabel("Y (m)")
+ax1.set_xlabel("X坐标 (m)")
+ax1.set_ylabel("Y坐标 (m)")
 ax1.set_zlabel("时间 (s)")
 ax1.set_title("方式1 (4Hz) 清洗后三维轨迹")
 
 ax2 = fig.add_subplot(2, 2, 2)
 ax2.plot(df1["x_m"], df1["y_m"], "b-", lw=1.2)
-ax2.set_xlabel("X (m)")
-ax2.set_ylabel("Y (m)")
-ax2.set_title("方式1 (4Hz) 清洗后 X-Y 投影")
+ax2.set_xlabel("X坐标 (m)")
+ax2.set_ylabel("Y坐标 (m)")
+ax2.set_title("方式1 (4Hz) 清洗后X-Y投影")
 ax2.axis("equal")
 ax2.grid(alpha=0.3)
 
@@ -60,16 +60,16 @@ scatter2 = ax3.scatter(
     s=3,
     alpha=0.75,
 )
-ax3.set_xlabel("X (m)")
-ax3.set_ylabel("Y (m)")
+ax3.set_xlabel("X坐标 (m)")
+ax3.set_ylabel("Y坐标 (m)")
 ax3.set_zlabel("时间 (s)")
 ax3.set_title("方式2 (5Hz) 清洗后三维轨迹")
 
 ax4 = fig.add_subplot(2, 2, 4)
 ax4.plot(df2["x_m"], df2["y_m"], "r-", lw=1.2)
-ax4.set_xlabel("X (m)")
-ax4.set_ylabel("Y (m)")
-ax4.set_title("方式2 (5Hz) 清洗后 X-Y 投影")
+ax4.set_xlabel("X坐标 (m)")
+ax4.set_ylabel("Y坐标 (m)")
+ax4.set_title("方式2 (5Hz) 清洗后X-Y投影")
 ax4.axis("equal")
 ax4.grid(alpha=0.3)
 
@@ -78,5 +78,5 @@ plt.tight_layout(rect=[0, 0, 1, 0.96])
 fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches="tight")
 plt.show()
 
-print(f"saved: {OUTPUT_PATH}")
+print(f"已保存：{OUTPUT_PATH}")
 print(solver.CLEANING_REPORT)

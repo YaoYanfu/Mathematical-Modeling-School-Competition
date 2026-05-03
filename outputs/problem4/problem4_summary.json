@@ -1,30 +1,31 @@
 {
-  "trajectory_source": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题三\\problem3_trajectory_10hz_kalman.csv",
-  "target_source": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件4.xlsx",
-  "constraints": {
-    "shoot_distance_range_m": [
+  "思路": "先用6维卡尔曼滤波估计平滑位置、速度和加速度；再提取连续可行时间段；每段保留代表任务；最后用0-1规划选择互不冲突的任务。",
+  "轨迹来源": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题三\\problem3_trajectory_10hz_kalman.csv",
+  "目标来源": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\数据以及可视化\\附件4.xlsx",
+  "运动状态CSV": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\problem4_motion_state_kalman.csv",
+  "射击候选任务数": 8,
+  "拍照候选任务数": 22,
+  "候选任务总数": 30,
+  "选中射击任务数": 2,
+  "选中拍照任务数": 6,
+  "选中任务总数": 8,
+  "目标函数值": 7.7,
+  "约束": {
+    "射击距离范围_m": [
       5.0,
       30.0
     ],
-    "photo_distance_range_m": [
+    "拍照距离范围_m": [
       10.0,
       40.0
     ],
-    "shoot_speed_max_mps": 2.0,
-    "photo_speed_max_mps": 1.5,
-    "accel_max_mps2": 1.5,
-    "shoot_prep_s": 1.5,
-    "photo_prep_s": 0.5,
-    "photo_min_angle_diff_deg": 60.0,
-    "shoot_expected_score": 0.85,
-    "photo_score": 1.0
+    "射击最大速度_mps": 2.0,
+    "拍照最大速度_mps": 1.5,
+    "最大加速度_mps2": 1.5,
+    "射击准备窗口点数": 15,
+    "拍照准备窗口点数": 5,
+    "同一拍照目标最小角度差_deg": 60.0
   },
-  "candidate_count": 1586,
-  "selected_count": 17,
-  "selected_shoot_count": 5,
-  "selected_photo_count": 12,
-  "objective_value": 16.25,
-  "selected_tasks_csv": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\problem4_selected_tasks.csv",
-  "filled_result_workbook": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\result.xlsx",
-  "result_template_path": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\result.xlsx"
+  "任务CSV": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\outputs\\问题四\\problem4_selected_tasks.csv",
+  "结果工作簿": "C:\\Users\\Legiony\\Desktop\\mathematicalModeling_B\\TestB\\result.xlsx"
 }
