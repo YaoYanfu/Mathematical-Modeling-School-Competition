@@ -25,8 +25,10 @@ PHOTO_DISTANCE_RANGE_M = (10.0, 40.0)
 SHOOT_SPEED_MAX_MPS = 2.0
 PHOTO_SPEED_MAX_MPS = 1.5
 ACCEL_MAX_MPS2 = 1.5
-SHOOT_PREP_POINTS = 15
-PHOTO_PREP_POINTS = 5
+SHOOT_PREP_TIME_S = 1.5
+PHOTO_PREP_TIME_S = 0.5
+SHOOT_PREP_POINTS = int(round(SHOOT_PREP_TIME_S / DT)) + 1
+PHOTO_PREP_POINTS = int(round(PHOTO_PREP_TIME_S / DT)) + 1
 PHOTO_MIN_ANGLE_DIFF_DEG = 60.0
 
 SHOOT_WEIGHT = 0.85
@@ -389,6 +391,8 @@ def main() -> None:
             "射击最大速度_mps": SHOOT_SPEED_MAX_MPS,
             "拍照最大速度_mps": PHOTO_SPEED_MAX_MPS,
             "最大加速度_mps2": ACCEL_MAX_MPS2,
+            "射击准备时间_s": SHOOT_PREP_TIME_S,
+            "拍照准备时间_s": PHOTO_PREP_TIME_S,
             "射击准备窗口点数": SHOOT_PREP_POINTS,
             "拍照准备窗口点数": PHOTO_PREP_POINTS,
             "同一拍照目标最小圆周角差_deg": PHOTO_MIN_ANGLE_DIFF_DEG,
